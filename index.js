@@ -1,7 +1,11 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 
-const { useState, useEffect, useCallback, useReducer } = React;
+const { useState, useEffect, useCallback, useReducer, useRef } = React;
+
+// --- MQTT Configuration ---
+const MQTT_BROKER_URL = 'wss://broker.hivemq.com:8884/mqtt';
+const MQTT_TOPIC_PREFIX = 'tysiacha-game-aistudio-v2'; // Unique prefix to avoid collisions
 
 // --- Компонент RulesModal ---
 const RulesModal = ({ onClose }) => {
@@ -172,6 +176,7 @@ const RulesModal = ({ onClose }) => {
 const Lobby = ({ onStartGame }) => {
   const [roomCode, setRoomCode] = useState('');
   const [playerCount, setPlayerCount] = useState(2);
+  const [playerName, setPlayerName] = useState('');
   const [isJoining, setIsJoining] = useState(false);
 
   useEffect(() => {
@@ -187,8 +192,8 @@ const Lobby = ({ onStartGame }) => {
 
   const handleStart = () => {
     const finalRoomCode = roomCode.trim();
-    if (finalRoomCode.length >= 4) {
-      onStartGame(finalRoomCode, playerCount);
+    if (finalRoomCode.length >= 4 && playerName.trim().length > 2) {
+      onStartGame(finalRoomCode, playerCount, playerName.trim());
     }
   };
 
@@ -199,6 +204,23 @@ const Lobby = ({ onStartGame }) => {
     React.createElement(
       'div',
       { className: "space-y-6" },
+      React.createElement(
+        'div',
+        null,
+        React.createElement(
+          'label',
+          { htmlFor: "playerName", className: "block text-lg font-semibold text-gray-300 mb-2" },
+          'Ваше имя'
+        ),
+        React.createElement('input', {
+          id: "playerName",
+          type: "text",
+          value: playerName,
+          onChange: (e) => setPlayerName(e.target.value),
+          placeholder: "Введите имя",
+          className: "w-full p-3 text-center bg-slate-900 border-2 border-slate-600 rounded-lg text-xl font-semibold text-white focus:outline-none focus:border-yellow-400 transition-colors"
+        })
+      ),
       React.createElement(
         'div',
         null,
@@ -246,7 +268,7 @@ const Lobby = ({ onStartGame }) => {
         {
           onClick: handleStart,
           className: "w-full py-3 bg-green-600 hover:bg-green-700 rounded-lg text-xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed",
-          disabled: roomCode.trim().length < 4
+          disabled: roomCode.trim().length < 4 || playerName.trim().length < 3
         },
         isJoining ? 'Войти' : 'Начать игру'
       ),
@@ -459,529 +481,390 @@ const SmallDiceIcon = ({ value }) => {
   );
 };
 
-const Game = ({ roomCode, playerCount, onExit }) => {
+const createInitialState = (pCount) => {
+  return {
+    players: Array.from({ length: pCount }, (_, i) => ({ id: i, name: `Игрок ${i + 1}`, scores: [] })),
+    currentPlayerIndex: 0,
+    diceOnBoard: [],
+    keptDiceThisTurn: [],
+    diceKeptFromThisRoll: [],
+    selectedDiceIndices: [], // Now an array
+    scoreFromPreviousRolls: 0,
+    currentTurnScore: 0,
+    potentialScore: 0,
+    gameMessage: `Ход Игрока 1. Бросайте кости!`,
+    isGameOver: false,
+    canRoll: true,
+    canBank: false,
+    canKeep: false,
+    version: 1, // For state updates
+  };
+};
+
+const Game = ({ roomCode, playerCount, playerName, onExit }) => {
+  const [gameState, setGameState] = useState(null);
+  const [myPlayerId, setMyPlayerId] = useState(null);
+  const [connectionStatus, setConnectionStatus] = useState('connecting');
   const [isScoreboardExpanded, setIsScoreboardExpanded] = useState(false);
   const [showRules, setShowRules] = useState(false);
-
-  const createInitialState = (pCount) => {
-    return {
-      players: Array.from({ length: pCount }, (_, i) => ({ id: i, name: `Игрок ${i + 1}`, scores: [] })),
-      currentPlayerIndex: 0,
-      diceOnBoard: [],
-      keptDiceThisTurn: [],
-      diceKeptFromThisRoll: [],
-      selectedDiceIndices: new Set(),
-      scoreFromPreviousRolls: 0,
-      currentTurnScore: 0,
-      potentialScore: 0,
-      gameMessage: `Ход Игрока 1. Бросайте кости!`,
-      isGameOver: false,
-      canRoll: true,
-      canBank: false,
-      canKeep: false,
-    };
-  }
+  const [isDragOver, setIsDragOver] = useState(false);
   
-  const gameReducer = (state, action) => {
-    switch (action.type) {
-      case 'ROLL_DICE': {
-        if (!state.canRoll || state.isGameOver) return state;
-
-        const isHotDiceRoll = state.keptDiceThisTurn.length >= 5;
-        const diceToRollCount = isHotDiceRoll ? 5 : 5 - state.keptDiceThisTurn.length;
-        const newDice = Array.from({ length: diceToRollCount }, () => Math.floor(Math.random() * 6) + 1);
-        const { scoringGroups } = analyzeDice(newDice);
-        const rollScore = scoringGroups.reduce((sum, group) => sum + group.score, 0);
-
-
-        if (rollScore === 0) {
-          // BOLT!
-          const newPlayers = state.players.map((player, index) => {
-              if (index === state.currentPlayerIndex) {
-                  return { ...player, scores: [...player.scores, '/'] };
-              }
-              return player;
-          });
-          const nextPlayerIndex = (state.currentPlayerIndex + 1) % playerCount;
-          return {
-            ...createInitialState(playerCount),
-            players: newPlayers,
-            currentPlayerIndex: nextPlayerIndex,
-            diceOnBoard: newDice,
-            gameMessage: `Болт! Очки сгорели. Ход Игрока ${nextPlayerIndex + 1}.`,
-          };
-        }
-        
-        const newScoreFromPreviousRolls = state.currentTurnScore;
-        
-        return {
-          ...state,
-          diceOnBoard: newDice,
-          keptDiceThisTurn: isHotDiceRoll ? [] : state.keptDiceThisTurn,
-          diceKeptFromThisRoll: [],
-          scoreFromPreviousRolls: newScoreFromPreviousRolls,
-          gameMessage: `Ваш бросок. Выберите и перетащите очковые кости.`,
-          canRoll: false,
-          canBank: true,
-          selectedDiceIndices: new Set(),
-          canKeep: false,
-          potentialScore: 0,
-        };
-      }
-
-      case 'TOGGLE_DIE_SELECTION': {
-        if (state.isGameOver || state.diceOnBoard.length === 0) return state;
-
-        const { index } = action.payload;
-        const newSelectedIndices = new Set(state.selectedDiceIndices);
-        if (newSelectedIndices.has(index)) {
-            newSelectedIndices.delete(index);
-        } else {
-            newSelectedIndices.add(index);
-        }
-        
-        const selectedValues = Array.from(newSelectedIndices).map(i => state.diceOnBoard[i]);
-        
-        let validation = validateSelection(selectedValues);
-        
-        if (!validation.isValid && selectedValues.length > 0) {
-            const combinedValidation = validateSelection([...state.diceKeptFromThisRoll, ...selectedValues]);
-            if (combinedValidation.isValid) {
-                const currentRollScore = validateSelection(state.diceKeptFromThisRoll).score;
-                validation = {
-                    isValid: true,
-                    score: combinedValidation.score - currentRollScore,
-                    values: selectedValues
-                };
-            }
-        }
-
-        return {
-            ...state,
-            selectedDiceIndices: newSelectedIndices,
-            canKeep: validation.isValid,
-            potentialScore: validation.score > 0 ? validation.score : 0,
-            gameMessage: validation.isValid 
-                ? `Выбрано +${validation.score}. Перетащите или дважды кликните, чтобы отложить.`
-                : `Выберите корректную комбинацию.`,
-        };
-      }
-      
-      case 'KEEP_DICE': {
-          if (state.isGameOver) return state;
-
-          const { indices } = action.payload;
-          const newlySelectedValues = indices.map(i => state.diceOnBoard[i]);
-          const combinedDiceForValidation = [...state.diceKeptFromThisRoll, ...newlySelectedValues];
-          const validation = validateSelection(combinedDiceForValidation);
-
-          if (!validation.isValid) {
-              return {
-                  ...state,
-                  gameMessage: "Неверный выбор. Эта кость не образует очковую комбинацию."
-              }
-          };
-
-          const scoreOfThisRoll = validation.score;
-          const newTurnScore = state.scoreFromPreviousRolls + scoreOfThisRoll;
-          const scoreAdded = newTurnScore - state.currentTurnScore;
-          const newKeptDiceThisTurn = [...state.keptDiceThisTurn, ...newlySelectedValues];
-          const newDiceKeptFromThisRoll = combinedDiceForValidation;
-          const newDiceOnBoard = state.diceOnBoard.filter((_, i) => !indices.includes(i));
-          const allDiceScored = newDiceOnBoard.length === 0;
-          
-          if(allDiceScored) {
-             return {
-              ...state,
-              currentTurnScore: newTurnScore,
-              keptDiceThisTurn: newKeptDiceThisTurn,
-              diceKeptFromThisRoll: newDiceKeptFromThisRoll,
-              diceOnBoard: [],
-              gameMessage: `+${scoreAdded}! Очки за ход: ${newTurnScore}. Все кости сыграли! Бросайте снова.`,
-              canRoll: true,
-              canBank: true,
-              selectedDiceIndices: new Set(),
-              canKeep: false,
-              potentialScore: 0,
-             }
-          }
-
-          return {
-              ...state,
-              currentTurnScore: newTurnScore,
-              keptDiceThisTurn: newKeptDiceThisTurn,
-              diceKeptFromThisRoll: newDiceKeptFromThisRoll,
-              diceOnBoard: newDiceOnBoard,
-              gameMessage: `+${scoreAdded}! Очки за ход: ${newTurnScore}. Бросайте снова или запишите.`,
-              canRoll: true,
-              canBank: true,
-              selectedDiceIndices: new Set(),
-              canKeep: false,
-              potentialScore: 0,
-          };
-      }
-
-      case 'BANK_SCORE': {
-        if (!state.canBank || state.isGameOver) return state;
-        
-        let finalTurnScore = state.currentTurnScore;
-        if (state.canKeep && state.potentialScore > 0) {
-            finalTurnScore += state.potentialScore;
-        }
-        
-        if (finalTurnScore === 0) {
-          const currentPlayerName = state.players[state.currentPlayerIndex].name;
-          const newPlayersWithBolt = state.players.map((player, index) => {
-            if (index === state.currentPlayerIndex) {
-              return { ...player, scores: [...player.scores, '/'] };
-            }
-            return player;
-          });
-          const nextPlayerIndex = (state.currentPlayerIndex + 1) % playerCount;
-          return {
-            ...createInitialState(playerCount),
-            players: newPlayersWithBolt,
-            currentPlayerIndex: nextPlayerIndex,
-            gameMessage: `${currentPlayerName} получает болт. Ход Игрока ${nextPlayerIndex + 1}.`
-          };
-        }
-
-        const newPlayers = state.players.map((player, index) => {
-            if (index === state.currentPlayerIndex) {
-                return {
-                    ...player,
-                    scores: [...player.scores, finalTurnScore],
-                };
-            }
-            return player;
-        });
-        
-        const currentPlayer = newPlayers[state.currentPlayerIndex];
-        const totalScore = calculateTotalScore(currentPlayer);
-        
-        if (totalScore >= 1000) {
-          return {
-            ...createInitialState(playerCount),
-            players: newPlayers,
-            isGameOver: true,
-            gameMessage: `${currentPlayer.name} победил, набрав ${totalScore} очков!`,
-          };
-        }
-
-        const nextPlayerIndex = (state.currentPlayerIndex + 1) % playerCount;
-        return {
-          ...createInitialState(playerCount),
-          players: newPlayers,
-          currentPlayerIndex: nextPlayerIndex,
-          gameMessage: `${currentPlayer.name} записал ${finalTurnScore} очков. Ход Игрока ${nextPlayerIndex + 1}.`
-        };
-      }
-
-      case 'NEW_GAME':
-        return createInitialState(playerCount);
-      
-      default:
-        return state;
+  const mqttClientRef = useRef(null);
+  const topic = `${MQTT_TOPIC_PREFIX}/${roomCode}`;
+  
+  const publishState = useCallback((newState) => {
+    if (mqttClientRef.current && mqttClientRef.current.connected) {
+      const stateWithVersion = { ...newState, version: (gameState?.version || 0) + 1 };
+      mqttClientRef.current.publish(topic, JSON.stringify(stateWithVersion), { retain: true });
     }
+  }, [topic, gameState]);
+
+  useEffect(() => {
+    const client = mqtt.connect(MQTT_BROKER_URL);
+    mqttClientRef.current = client;
+
+    client.on('connect', () => {
+      setConnectionStatus('connected');
+      client.subscribe(topic, (err) => {
+        if (!err) {
+          // After subscribing, wait a moment to see if a state exists.
+          // If not, this client is the host and creates the initial state.
+          setTimeout(() => {
+            if (!gameState) {
+                const initialState = createInitialState(playerCount);
+                publishState(initialState);
+            }
+          }, 1000);
+        }
+      });
+    });
+    
+    client.on('message', (receivedTopic, message) => {
+      if (receivedTopic === topic) {
+        try {
+          const receivedState = JSON.parse(message.toString());
+          setGameState(state => {
+            if (!state || receivedState.version > state.version) {
+              return receivedState;
+            }
+            return state;
+          });
+        } catch (e) { console.error('Error parsing game state:', e); }
+      }
+    });
+
+    client.on('error', () => setConnectionStatus('error'));
+    client.on('offline', () => setConnectionStatus('reconnecting'));
+    client.on('reconnect', () => setConnectionStatus('reconnecting'));
+
+    return () => {
+      if (client) client.end();
+    };
+  }, [roomCode, playerCount]); // Deliberately not including gameState/publishState to avoid loops
+
+
+  // --- Game Logic Actions ---
+  const handleRollDice = () => {
+    const state = gameState;
+    if (!state.canRoll || state.isGameOver) return;
+
+    const isHotDiceRoll = state.keptDiceThisTurn.length >= 5;
+    const diceToRollCount = isHotDiceRoll ? 5 : 5 - state.keptDiceThisTurn.length;
+    const newDice = Array.from({ length: diceToRollCount }, () => Math.floor(Math.random() * 6) + 1);
+    const { scoringGroups } = analyzeDice(newDice);
+    const rollScore = scoringGroups.reduce((sum, group) => sum + group.score, 0);
+
+    if (rollScore === 0) { // BOLT!
+      const newPlayers = state.players.map((player, index) =>
+        index === state.currentPlayerIndex ? { ...player, scores: [...player.scores, '/'] } : player
+      );
+      const nextPlayerIndex = (state.currentPlayerIndex + 1) % playerCount;
+      const boltState = {
+        ...createInitialState(playerCount),
+        players: newPlayers,
+        currentPlayerIndex: nextPlayerIndex,
+        diceOnBoard: newDice,
+        gameMessage: `Болт! Очки сгорели. Ход Игрока ${nextPlayerIndex + 1}.`,
+      };
+      publishState(boltState);
+      return;
+    }
+    
+    const newState = {
+      ...state,
+      diceOnBoard: newDice,
+      keptDiceThisTurn: isHotDiceRoll ? [] : state.keptDiceThisTurn,
+      diceKeptFromThisRoll: [],
+      scoreFromPreviousRolls: state.currentTurnScore,
+      gameMessage: `Ваш бросок. Выберите и перетащите очковые кости.`,
+      canRoll: false,
+      canBank: true,
+      selectedDiceIndices: [],
+      canKeep: false,
+      potentialScore: 0,
+    };
+    publishState(newState);
+  };
+  
+  const handleToggleDieSelection = (index) => {
+    if (gameState.isGameOver || gameState.diceOnBoard.length === 0) return;
+    
+    const newSelectedIndices = [...gameState.selectedDiceIndices];
+    const existingIndex = newSelectedIndices.indexOf(index);
+    if (existingIndex > -1) {
+        newSelectedIndices.splice(existingIndex, 1);
+    } else {
+        newSelectedIndices.push(index);
+    }
+    
+    const selectedValues = newSelectedIndices.map(i => gameState.diceOnBoard[i]);
+    
+    let validation = validateSelection(selectedValues);
+    if (!validation.isValid && selectedValues.length > 0) {
+        const combinedValidation = validateSelection([...gameState.diceKeptFromThisRoll, ...selectedValues]);
+        if (combinedValidation.isValid) {
+            const currentRollScore = validateSelection(gameState.diceKeptFromThisRoll).score;
+            validation = { isValid: true, score: combinedValidation.score - currentRollScore, values: selectedValues };
+        }
+    }
+
+    const newState = {
+        ...gameState,
+        selectedDiceIndices: newSelectedIndices,
+        canKeep: validation.isValid,
+        potentialScore: validation.score > 0 ? validation.score : 0,
+        gameMessage: validation.isValid 
+            ? `Выбрано +${validation.score}. Перетащите или дважды кликните, чтобы отложить.`
+            : `Выберите корректную комбинацию.`,
+    };
+    publishState(newState);
   };
 
-  const [state, dispatch] = useReducer(gameReducer, createInitialState(playerCount));
-  const [isDragOver, setIsDragOver] = useState(false);
+  const handleKeepDice = (indices) => {
+    const state = gameState;
+    if (state.isGameOver) return;
+
+    const newlySelectedValues = indices.map(i => state.diceOnBoard[i]);
+    const combinedDiceForValidation = [...state.diceKeptFromThisRoll, ...newlySelectedValues];
+    const validation = validateSelection(combinedDiceForValidation);
+
+    if (!validation.isValid) {
+        publishState({ ...state, gameMessage: "Неверный выбор. Эта кость не образует очковую комбинацию." });
+        return;
+    }
+
+    const scoreOfThisRoll = validation.score;
+    const newTurnScore = state.scoreFromPreviousRolls + scoreOfThisRoll;
+    const scoreAdded = newTurnScore - state.currentTurnScore;
+    const newKeptDiceThisTurn = [...state.keptDiceThisTurn, ...newlySelectedValues];
+    const newDiceOnBoard = state.diceOnBoard.filter((_, i) => !indices.includes(i));
+
+    let newState;
+    if (newDiceOnBoard.length === 0) { // Hot Dice
+       newState = {
+        ...state,
+        currentTurnScore: newTurnScore,
+        keptDiceThisTurn: newKeptDiceThisTurn,
+        diceKeptFromThisRoll: [],
+        diceOnBoard: [],
+        gameMessage: `+${scoreAdded}! Очки за ход: ${newTurnScore}. Все кости сыграли! Бросайте снова.`,
+        canRoll: true,
+        canBank: true,
+        selectedDiceIndices: [],
+        canKeep: false,
+        potentialScore: 0,
+       };
+    } else {
+        newState = {
+            ...state,
+            currentTurnScore: newTurnScore,
+            keptDiceThisTurn: newKeptDiceThisTurn,
+            diceKeptFromThisRoll: combinedDiceForValidation,
+            diceOnBoard: newDiceOnBoard,
+            gameMessage: `+${scoreAdded}! Очки за ход: ${newTurnScore}. Бросайте снова или запишите.`,
+            canRoll: true,
+            canBank: true,
+            selectedDiceIndices: [],
+            canKeep: false,
+            potentialScore: 0,
+        };
+    }
+    publishState(newState);
+  };
+  
+  const handleBankScore = () => {
+    const state = gameState;
+    if (!state.canBank || state.isGameOver) return;
+    
+    let finalTurnScore = state.currentTurnScore + state.potentialScore;
+    const selectedValues = state.selectedDiceIndices.map(i => state.diceOnBoard[i]);
+    const validation = validateSelection([...state.diceKeptFromThisRoll, ...selectedValues]);
+    if(state.selectedDiceIndices.length > 0 && validation.isValid){
+        finalTurnScore = state.scoreFromPreviousRolls + validation.score;
+    }
+    
+    if (finalTurnScore === 0) {
+      const newPlayersWithBolt = state.players.map((p, i) => i === state.currentPlayerIndex ? { ...p, scores: [...p.scores, '/'] } : p);
+      const nextIdx = (state.currentPlayerIndex + 1) % playerCount;
+      publishState({ ...createInitialState(playerCount), players: newPlayersWithBolt, currentPlayerIndex: nextIdx, gameMessage: `${state.players[state.currentPlayerIndex].name} получает болт. Ход Игрока ${nextIdx + 1}.`});
+      return;
+    }
+
+    const newPlayers = state.players.map((p, i) => i === state.currentPlayerIndex ? { ...p, scores: [...p.scores, finalTurnScore] } : p);
+    const totalScore = calculateTotalScore(newPlayers[state.currentPlayerIndex]);
+    
+    if (totalScore >= 1000) {
+      publishState({ ...createInitialState(playerCount), players: newPlayers, isGameOver: true, gameMessage: `${newPlayers[state.currentPlayerIndex].name} победил, набрав ${totalScore} очков!` });
+      return;
+    }
+
+    const nextPlayerIndex = (state.currentPlayerIndex + 1) % playerCount;
+    publishState({ ...createInitialState(playerCount), players: newPlayers, currentPlayerIndex: nextPlayerIndex, gameMessage: `${newPlayers[state.currentPlayerIndex].name} записал ${finalTurnScore} очков. Ход Игрока ${nextPlayerIndex + 1}.`});
+  };
+
+  const handleNewGame = () => publishState(createInitialState(playerCount));
+
+  const handleJoin = (playerIndex) => {
+    if(myPlayerId !== null) return;
+    const newPlayers = gameState.players.map((p, i) => i === playerIndex ? {...p, name: playerName} : p);
+    setMyPlayerId(playerIndex);
+    publishState({...gameState, players: newPlayers});
+  };
 
   const handleDragStart = (e, index) => {
-    if (state.selectedDiceIndices.size > 0 && state.selectedDiceIndices.has(index)) {
+    if (gameState.selectedDiceIndices.length > 0 && gameState.selectedDiceIndices.includes(index)) {
       e.dataTransfer.setData('text/plain', 'selection');
-      e.dataTransfer.effectAllowed = 'move';
     } else {
-      const singleDieIndex = JSON.stringify([index]);
-      e.dataTransfer.setData('application/json', singleDieIndex);
-      e.dataTransfer.setData('text/plain', 'group');
-      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('application/json', JSON.stringify([index]));
     }
   };
-
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    setIsDragOver(true);
-  };
-
-  const handleDragLeave = () => {
-    setIsDragOver(false);
-  };
-
   const handleDrop = (e) => {
     e.preventDefault();
     setIsDragOver(false);
+    if (myPlayerId !== gameState.currentPlayerIndex) return;
     const type = e.dataTransfer.getData('text/plain');
-
-    if (type === 'selection' && state.canKeep) {
-      dispatch({ type: 'KEEP_DICE', payload: { indices: Array.from(state.selectedDiceIndices) } });
-    } else if (type === 'group') {
-      try {
-        const indicesString = e.dataTransfer.getData('application/json');
-        const indices = JSON.parse(indicesString);
-        if (Array.isArray(indices)) {
-            dispatch({ type: 'KEEP_DICE', payload: { indices } });
-        }
-      } catch (error) {
-        console.error("Failed to parse dropped dice group:", error);
-      }
-    }
-  };
-
-  const handleDieDoubleClick = (index) => {
-    if (state.isGameOver || state.diceOnBoard.length === 0) return;
-
-    if (state.selectedDiceIndices.size > 0 && state.selectedDiceIndices.has(index)) {
-        dispatch({ type: 'KEEP_DICE', payload: { indices: Array.from(state.selectedDiceIndices) } });
+    if (type === 'selection' && gameState.canKeep) {
+      handleKeepDice(gameState.selectedDiceIndices);
     } else {
-        dispatch({ type: 'KEEP_DICE', payload: { indices: [index] } });
+      try {
+        const indices = JSON.parse(e.dataTransfer.getData('application/json'));
+        if (Array.isArray(indices)) handleKeepDice(indices);
+      } catch (error) { console.error("Drop error:", error); }
+    }
+  };
+  const handleDieDoubleClick = (index) => {
+    if (myPlayerId !== gameState.currentPlayerIndex) return;
+    if (gameState.selectedDiceIndices.length > 0 && gameState.selectedDiceIndices.includes(index)) {
+        if(gameState.canKeep) handleKeepDice(gameState.selectedDiceIndices);
+    } else {
+        handleKeepDice([index]);
     }
   };
 
-  const isHotDiceRoll = state.keptDiceThisTurn.length >= 5;
-  const diceToRollCount = isHotDiceRoll ? 5 : 5 - state.keptDiceThisTurn.length;
-  const rollButtonText = diceToRollCount === 5 ? 'Бросить все' : `Бросить ${diceToRollCount}`;
+  if (connectionStatus !== 'connected' || !gameState) {
+    return React.createElement('div', { className: "text-center" }, 
+      React.createElement('h2', { className: "font-ruslan text-4xl text-yellow-300 mb-4" }, 'Подключение...'),
+      React.createElement('p', { className: "text-lg" }, 
+        connectionStatus === 'connecting' ? 'Устанавливаем связь с сервером...' : 
+        connectionStatus === 'reconnecting' ? 'Потеряна связь, переподключаемся...' :
+        connectionStatus === 'error' ? 'Ошибка подключения. Попробуйте обновить страницу.' :
+        'Загрузка игровой комнаты...'
+      )
+    );
+  }
 
-  const totalDiceSlots = 5;
-  const placeholdersToRender = totalDiceSlots - state.diceOnBoard.length;
+  const isMyTurn = myPlayerId === gameState.currentPlayerIndex;
+  const rollButtonText = (gameState.keptDiceThisTurn.length >= 5 ? 5 : 5 - gameState.keptDiceThisTurn.length) === 5 
+    ? 'Бросить все' : `Бросить ${5 - gameState.keptDiceThisTurn.length}`;
 
   return React.createElement(
     React.Fragment,
     null,
     showRules && React.createElement(RulesModal, { onClose: () => setShowRules(false) }),
     React.createElement(
-      'div',
-      { className: "w-full h-full flex flex-col p-4 text-white overflow-hidden" },
-      React.createElement(
-        'header',
-        { className: "flex justify-between items-center mb-4 flex-shrink-0" },
-        React.createElement(
-          'div',
-          { className: "p-2 bg-black/50 rounded-lg text-sm" },
-          React.createElement('p', { className: "font-mono" }, `КОД КОМНАТЫ: ${roomCode}`)
-        ),
-        React.createElement(
-          'h1',
-          {
-            onClick: () => setShowRules(true),
-            className: "font-ruslan text-4xl text-yellow-300 cursor-pointer hover:text-yellow-200 transition-colors",
-            title: "Показать правила"
-          },
-          'ТЫСЯЧА'
-        ),
-        React.createElement(
-          'button',
-          { onClick: onExit, className: "px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg font-bold" },
-          'Выйти'
-        )
+      'div', { className: "w-full h-full flex flex-col p-4 text-white overflow-hidden" },
+      React.createElement('header', { className: "flex justify-between items-center mb-4 flex-shrink-0" },
+        React.createElement('div', { className: "p-2 bg-black/50 rounded-lg text-sm" }, React.createElement('p', { className: "font-mono" }, `КОД КОМНАТЫ: ${roomCode}`)),
+        React.createElement('h1', { onClick: () => setShowRules(true), className: "font-ruslan text-4xl text-yellow-300 cursor-pointer hover:text-yellow-200 transition-colors", title: "Показать правила" }, 'ТЫСЯЧА'),
+        React.createElement('button', { onClick: onExit, className: "px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg font-bold" }, 'Выйти')
       ),
-      React.createElement(
-        'div',
-        { className: "flex-grow flex flex-col lg:grid lg:grid-cols-4 gap-4 min-h-0" },
-        React.createElement(
-          'aside',
-          { className: `lg:col-span-1 bg-slate-800/80 p-4 rounded-xl border border-slate-700 flex flex-col transition-all duration-500 ease-in-out ${isScoreboardExpanded ? 'h-full' : 'flex-shrink-0'}` },
-          React.createElement(
-              'div',
-              { className: "flex justify-between items-center mb-4 flex-shrink-0" },
-              React.createElement('h2', { className: "font-ruslan text-3xl text-yellow-300" }, 'Игроки'),
-              React.createElement(
-                  'button',
-                  {
-                      onClick: () => setIsScoreboardExpanded(!isScoreboardExpanded),
-                      className: "p-1 rounded-full hover:bg-slate-700/50 lg:hidden",
-                      'aria-label': isScoreboardExpanded ? "Свернуть таблицу" : "Развернуть таблицу",
-                      'aria-expanded': isScoreboardExpanded
-                  },
-                  React.createElement(
-                      'svg',
-                      { xmlns: "http://www.w3.org/2000/svg", className: `h-6 w-6 text-yellow-300 transition-transform duration-300 ${isScoreboardExpanded ? 'rotate-180' : ''}`, fill: "none", viewBox: "0 0 24 24", stroke: "currentColor", strokeWidth: 2 },
-                      React.createElement('path', { strokeLinecap: "round", strokeLinejoin: "round", d: "M19 9l-7 7-7-7" })
-                  )
+      React.createElement('div', { className: "flex-grow flex flex-col lg:grid lg:grid-cols-4 gap-4 min-h-0" },
+        React.createElement('aside', { className: `lg:col-span-1 bg-slate-800/80 p-4 rounded-xl border border-slate-700 flex flex-col transition-all duration-500 ease-in-out ${isScoreboardExpanded ? 'h-full' : 'flex-shrink-0'}` },
+          React.createElement('div', { className: "flex justify-between items-center mb-4 flex-shrink-0" },
+            React.createElement('h2', { className: "font-ruslan text-3xl text-yellow-300" }, 'Игроки'),
+            React.createElement('button', { onClick: () => setIsScoreboardExpanded(!isScoreboardExpanded), className: "p-1 rounded-full hover:bg-slate-700/50 lg:hidden" }, 
+              React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: `h-6 w-6 text-yellow-300 transition-transform duration-300 ${isScoreboardExpanded ? 'rotate-180' : ''}`, fill: "none", viewBox: "0 0 24 24", stroke: "currentColor", strokeWidth: 2 },
+                React.createElement('path', { strokeLinecap: "round", strokeLinejoin: "round", d: "M19 9l-7 7-7-7" })
               )
+            )
           ),
-          React.createElement(
-            'div',
-            { className: "flex-grow overflow-y-auto relative" },
-            React.createElement(
-              'table',
-              { className: "w-full text-sm text-left text-gray-300" },
-              React.createElement(
-                'thead',
-                { className: "text-xs text-yellow-300 uppercase bg-slate-800 sticky top-0 z-10" },
-                React.createElement(
-                  'tr',
-                  null,
-                  state.players.map((player, index) =>
-                    React.createElement(
-                      'th',
-                      {
-                        key: player.id,
-                        scope: "col",
-                        className: `h-10 px-2 text-center align-middle transition-colors duration-300 ${index === state.currentPlayerIndex && !state.isGameOver ? 'bg-yellow-400 text-slate-900' : 'bg-slate-700/50'}`
-                      },
-                      player.name
+          React.createElement('div', { className: "flex-grow overflow-y-auto relative" },
+            React.createElement('table', { className: "w-full text-sm text-left text-gray-300" },
+              React.createElement('thead', { className: "text-xs text-yellow-300 uppercase bg-slate-800 sticky top-0 z-10" },
+                React.createElement('tr', null, gameState.players.map((player, index) =>
+                  React.createElement('th', { key: player.id, scope: "col", className: `h-10 px-2 text-center align-middle transition-all duration-300 relative ${index === gameState.currentPlayerIndex && !gameState.isGameOver ? 'bg-yellow-400 text-slate-900' : 'bg-slate-700/50'} ${index === myPlayerId ? 'outline outline-2 outline-blue-400' : ''}` },
+                    player.name,
+                    player.name.startsWith('Игрок ') && myPlayerId === null && React.createElement(
+                      'button', { onClick: () => handleJoin(index), className: "absolute right-1 top-1/2 -translate-y-1/2 text-xs bg-green-600 hover:bg-green-700 px-2 py-1 rounded" }, "Войти"
                     )
                   )
-                )
+                ))
               ),
-              React.createElement(
-                'tbody',
-                { className: isScoreboardExpanded ? '' : 'hidden lg:table-row-group' },
+              React.createElement('tbody', { className: isScoreboardExpanded ? '' : 'hidden lg:table-row-group' },
                 (() => {
-                  const maxRounds = state.players.reduce((max, p) => Math.max(max, p.scores.length), 0);
-                  if (maxRounds === 0) {
-                    return React.createElement(
-                      'tr',
-                      null,
-                      React.createElement(
-                        'td',
-                        { colSpan: playerCount, className: "py-4 px-2 text-center text-gray-400 italic" },
-                        'Еще не было записано очков.'
-                      )
-                    );
-                  }
+                  const maxRounds = gameState.players.reduce((max, p) => Math.max(max, p.scores.length), 0);
+                  if (maxRounds === 0) return React.createElement('tr', null, React.createElement('td', { colSpan: playerCount, className: "py-4 px-2 text-center text-gray-400 italic" }, 'Еще не было записано очков.'));
                   const rows = [];
                   for (let i = 0; i < maxRounds; i++) {
-                    rows.push(
-                      React.createElement(
-                        'tr',
-                        { key: i, className: "border-b border-slate-700 hover:bg-slate-700/30" },
-                        state.players.map(player =>
-                          React.createElement(
-                            'td',
-                            { key: `${player.id}-${i}`, className: "py-2 px-2 text-center font-mono" },
-                            player.scores[i] !== undefined ? player.scores[i] : React.createElement('span', { className: "text-slate-500" }, '-')
-                          )
-                        )
+                    rows.push(React.createElement('tr', { key: i, className: "border-b border-slate-700 hover:bg-slate-700/30" },
+                      gameState.players.map(player =>
+                        React.createElement('td', { key: `${player.id}-${i}`, className: "py-2 px-2 text-center font-mono" }, player.scores[i] !== undefined ? player.scores[i] : React.createElement('span', { className: "text-slate-500" }, '-'))
                       )
-                    );
+                    ));
                   }
                   return rows;
                 })()
               ),
-              React.createElement(
-                'tfoot',
-                { className: "sticky bottom-0 bg-slate-800 font-bold text-white border-t-2 border-slate-500" },
-                React.createElement(
-                  'tr',
-                  null,
-                  state.players.map((player, index) =>
-                    React.createElement(
-                      'td',
-                      {
-                        key: player.id,
-                        className: `h-10 px-2 text-center text-lg font-mono align-middle transition-colors duration-300 ${index === state.currentPlayerIndex && !state.isGameOver ? 'bg-yellow-400/80 text-slate-900' : 'bg-slate-900/50'}`
-                      },
-                      calculateTotalScore(player)
-                    )
-                  )
-                )
+              React.createElement('tfoot', { className: "sticky bottom-0 bg-slate-800 font-bold text-white border-t-2 border-slate-500" },
+                React.createElement('tr', null, gameState.players.map((player, index) =>
+                  React.createElement('td', { key: player.id, className: `h-10 px-2 text-center text-lg font-mono align-middle transition-colors duration-300 ${index === gameState.currentPlayerIndex && !gameState.isGameOver ? 'bg-yellow-400/80 text-slate-900' : 'bg-slate-900/50'} ${index === myPlayerId ? 'outline outline-2 outline-blue-400' : ''}` }, calculateTotalScore(player))
+                ))
               )
             )
           )
         ),
-        React.createElement(
-          'main',
-          {
-            className: `relative flex-grow lg:col-span-3 bg-slate-900/70 rounded-xl border-2 flex flex-col justify-between transition-all duration-300 min-h-0 ${isDragOver ? 'border-green-400 shadow-2xl shadow-green-400/20' : 'border-slate-600'} p-4`,
-            onDragOver: handleDragOver,
-            onDrop: handleDrop,
-            onDragLeave: handleDragLeave
-          },
-          React.createElement(
-            'div',
-            { className: "w-full" },
-            React.createElement(
-              'div',
-              { className: `w-full p-3 mb-4 text-center rounded-lg ${state.isGameOver ? 'bg-green-600' : 'bg-slate-800'} border border-slate-600 flex items-center justify-center min-h-[72px]` },
-              React.createElement('p', { className: "text-lg font-semibold" }, state.gameMessage)
+        React.createElement('main', { className: `relative flex-grow lg:col-span-3 bg-slate-900/70 rounded-xl border-2 flex flex-col justify-between transition-all duration-300 min-h-0 ${isDragOver && isMyTurn ? 'border-green-400 shadow-2xl shadow-green-400/20' : 'border-slate-600'} p-4`, onDragOver: (e) => {e.preventDefault(); setIsDragOver(true);}, onDrop: handleDrop, onDragLeave: () => setIsDragOver(false) },
+          React.createElement('div', { className: "w-full" },
+            React.createElement('div', { className: `w-full p-3 mb-4 text-center rounded-lg ${gameState.isGameOver ? 'bg-green-600' : 'bg-slate-800'} border border-slate-600 flex items-center justify-center min-h-[72px]` },
+              React.createElement('p', { className: "text-lg font-semibold" }, gameState.gameMessage)
             ),
-            React.createElement(
-              'div',
-              { className: "w-full flex justify-center md:justify-end" },
-              React.createElement(
-                'div',
-                { className: "p-3 rounded-lg bg-black/40 border border-slate-700 w-full md:w-auto md:min-w-[300px]" },
+            React.createElement('div', { className: "w-full flex justify-center md:justify-end" },
+              React.createElement('div', { className: "p-3 rounded-lg bg-black/40 border border-slate-700 w-full md:w-auto md:min-w-[300px]" },
                 React.createElement('p', { className: "text-xs text-gray-400 mb-2 text-center uppercase tracking-wider" }, 'Отложено'),
-                React.createElement(
-                  'div',
-                  { className: "flex gap-2 flex-wrap justify-center min-h-[40px] items-center" },
-                  state.keptDiceThisTurn.length > 0
-                    ? state.keptDiceThisTurn.map((value, i) => React.createElement(SmallDiceIcon, { key: `kept-${i}`, value: value }))
+                React.createElement('div', { className: "flex gap-2 flex-wrap justify-center min-h-[40px] items-center" },
+                  gameState.keptDiceThisTurn.length > 0
+                    ? gameState.keptDiceThisTurn.map((value, i) => React.createElement(SmallDiceIcon, { key: `kept-${i}`, value: value }))
                     : React.createElement('span', { className: "text-slate-500 italic" }, 'Пусто')
                 )
               )
             )
           ),
-          React.createElement(
-            'div',
-            { className: "flex-grow w-full flex flex-col items-center justify-center pt-3 pb-6" },
-            React.createElement(
-              'div',
-              { className: "w-full sm:max-w-[480px] flex items-center justify-between min-h-[80px]" },
-              state.diceOnBoard.map((value, i) =>
-                React.createElement(DiceIcon, {
-                  key: `board-${i}`,
-                  value: value,
-                  isSelected: state.selectedDiceIndices.has(i),
-                  onClick: () => dispatch({ type: 'TOGGLE_DIE_SELECTION', payload: { index: i } }),
-                  onDragStart: (e) => handleDragStart(e, i),
-                  onDoubleClick: () => handleDieDoubleClick(i)
-                })
-              ),
-              Array.from({ length: placeholdersToRender }).map((_, i) =>
-                React.createElement(DiceIcon, { key: `placeholder-${i}`, value: 0 })
-              )
+          React.createElement('div', { className: "flex-grow w-full flex flex-col items-center justify-center pt-3 pb-6" },
+            React.createElement('div', { className: "w-full sm:max-w-[480px] flex items-center justify-between min-h-[80px]" },
+              gameState.diceOnBoard.map((value, i) => React.createElement(DiceIcon, { key: `board-${i}`, value: value, isSelected: gameState.selectedDiceIndices.includes(i), onClick: isMyTurn ? () => handleToggleDieSelection(i) : null, onDragStart: isMyTurn ? (e) => handleDragStart(e, i) : null, onDoubleClick: isMyTurn ? () => handleDieDoubleClick(i) : null })),
+              Array.from({ length: 5 - gameState.diceOnBoard.length }).map((_, i) => React.createElement(DiceIcon, { key: `placeholder-${i}`, value: 0 }))
             )
           ),
-          React.createElement(
-            'div',
-            { className: "w-full" },
-            React.createElement(
-              'div',
-              { className: "text-center mb-4" },
-              React.createElement(
-                'p',
-                { className: "text-xl" },
-                'Очки за ход: ',
-                React.createElement('span', { className: "font-ruslan text-5xl text-green-400" }, state.currentTurnScore + state.potentialScore)
-              )
+          React.createElement('div', { className: "w-full" },
+            React.createElement('div', { className: "text-center mb-4" },
+              React.createElement('p', { className: "text-xl" }, 'Очки за ход: ', React.createElement('span', { className: "font-ruslan text-5xl text-green-400" }, gameState.currentTurnScore + gameState.potentialScore))
             ),
-            React.createElement(
-              'div',
-              { className: "max-w-2xl mx-auto" },
-              state.isGameOver
-                ? React.createElement(
-                    'button',
-                    {
-                      onClick: () => dispatch({ type: 'NEW_GAME' }),
-                      className: "w-full py-4 bg-blue-600 hover:bg-blue-700 rounded-lg text-2xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg"
-                    },
-                    'Новая Игра'
-                  )
-                : React.createElement(
-                    'div',
-                    { className: "grid grid-cols-2 gap-4" },
-                    React.createElement(
-                      'button',
-                      {
-                        onClick: () => dispatch({ type: 'ROLL_DICE' }),
-                        disabled: !state.canRoll,
-                        className: "w-full py-3 bg-green-600 hover:bg-green-700 rounded-lg text-xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed disabled:scale-100"
-                      },
-                      rollButtonText
-                    ),
-                    React.createElement(
-                      'button',
-                      {
-                        onClick: () => dispatch({ type: 'BANK_SCORE' }),
-                        disabled: !state.canBank,
-                        className: "w-full py-3 bg-yellow-500 hover:bg-yellow-600 text-slate-900 rounded-lg text-xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed disabled:scale-100"
-                      },
-                      'Записать'
-                    )
+            React.createElement('div', { className: "max-w-2xl mx-auto" },
+              gameState.isGameOver
+                ? React.createElement('button', { onClick: handleNewGame, className: "w-full py-4 bg-blue-600 hover:bg-blue-700 rounded-lg text-2xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg" }, 'Новая Игра')
+                : React.createElement('div', { className: "grid grid-cols-2 gap-4" },
+                    React.createElement('button', { onClick: handleRollDice, disabled: !isMyTurn || !gameState.canRoll, className: "w-full py-3 bg-green-600 hover:bg-green-700 rounded-lg text-xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed disabled:scale-100" }, rollButtonText),
+                    React.createElement('button', { onClick: handleBankScore, disabled: !isMyTurn || !gameState.canBank, className: "w-full py-3 bg-yellow-500 hover:bg-yellow-600 text-slate-900 rounded-lg text-xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed disabled:scale-100" }, 'Записать')
                   )
             )
           )
@@ -997,10 +880,12 @@ const App = () => {
   const [screen, setScreen] = useState('LOBBY');
   const [roomCode, setRoomCode] = useState('');
   const [playerCount, setPlayerCount] = useState(2);
+  const [playerName, setPlayerName] = useState('');
 
-  const handleStartGame = useCallback((code, players) => {
+  const handleStartGame = useCallback((code, players, name) => {
     setRoomCode(code);
     setPlayerCount(players);
+    setPlayerName(name);
     setScreen('GAME');
   }, []);
 
@@ -1012,7 +897,7 @@ const App = () => {
   const renderScreen = () => {
     switch (screen) {
       case 'GAME':
-        return React.createElement(Game, { roomCode: roomCode, playerCount: playerCount, onExit: handleExitGame });
+        return React.createElement(Game, { roomCode: roomCode, playerCount: playerCount, playerName: playerName, onExit: handleExitGame });
       case 'LOBBY':
       default:
         return React.createElement(Lobby, { onStartGame: handleStartGame });
