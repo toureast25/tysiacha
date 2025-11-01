@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 
@@ -531,8 +532,16 @@ const Game = ({ roomCode, playerCount, playerName, onExit }) => {
           // After subscribing, wait a moment to see if a state exists.
           // If not, this client is the host and creates the initial state.
           setTimeout(() => {
-            if (!gameState) {
+            if (!gameState) { // This client is the creator
                 const initialState = createInitialState(playerCount);
+                initialState.players[0] = {
+                    ...initialState.players[0],
+                    name: playerName,
+                    isClaimed: true,
+                    scores: [],
+                };
+                setMyPlayerId(0); // Creator is player 0
+                initialState.gameMessage = `${playerName} создал(а) игру. Ожидание других игроков...`;
                 publishState(initialState);
             }
           }, 1000);
@@ -808,6 +817,7 @@ const Game = ({ roomCode, playerCount, playerName, onExit }) => {
   const isMyTurn = myPlayerId === gameState.currentPlayerIndex;
   const rollButtonText = (gameState.keptDiceThisTurn.length >= 5 ? 5 : 5 - gameState.keptDiceThisTurn.length) === 5 
     ? 'Бросить все' : `Бросить ${5 - gameState.keptDiceThisTurn.length}`;
+  const firstAvailableSlotIndex = gameState.players.findIndex(p => !p.isClaimed);
 
   return React.createElement(
     React.Fragment,
@@ -835,7 +845,7 @@ const Game = ({ roomCode, playerCount, playerName, onExit }) => {
               React.createElement('thead', { className: "text-xs text-yellow-300 uppercase bg-slate-800 sticky top-0 z-10" },
                 React.createElement('tr', null, gameState.players.map((player, index) =>
                   React.createElement('th', { key: player.id, scope: "col", className: `h-10 px-0 py-0 text-center align-middle transition-all duration-300 relative ${index === gameState.currentPlayerIndex && !gameState.isGameOver ? 'bg-yellow-400 text-slate-900' : 'bg-slate-700/50'} ${index === myPlayerId ? 'outline outline-2 outline-blue-400' : ''}` },
-                    !player.isClaimed && myPlayerId === null 
+                    index === firstAvailableSlotIndex && myPlayerId === null
                       ? React.createElement('button', { onClick: () => handleJoin(index), className: "w-full h-full bg-green-600 hover:bg-green-700 font-bold text-white transition-colors" }, "Войти")
                       : React.createElement('span', { className: "px-2" }, player.name)
                   )
