@@ -4,6 +4,7 @@ import { analyzeDice, validateSelection, calculateTotalScore, createInitialState
 import RulesModal from './RulesModal.js';
 import SpectatorsModal from './SpectatorsModal.js';
 import { DiceIcon, SmallDiceIcon } from './Dice.js';
+import useVoiceChat from '../hooks/useVoiceChat.js';
 
 const { useState, useEffect, useCallback, useRef } = React;
 
@@ -21,6 +22,17 @@ const Game = ({ roomCode, playerCount, playerName, onExit }) => {
   const isStateReceivedRef = useRef(false);
   const lastSeenTimestampsRef = useRef({});
   const gameStateRef = useRef(); // Ref to hold the latest game state for intervals/callbacks
+
+  // --- Voice Chat Integration ---
+  const { 
+    isVoiceConnected,
+    isMuted,
+    speakingPeers,
+    connectToVoice,
+    disconnectFromVoice,
+    toggleMute
+  } = useVoiceChat(mqttClientRef.current, myPlayerId, gameState?.players, roomCode);
+
 
   // Keep the ref updated with the latest state
   useEffect(() => {
@@ -147,50 +159,53 @@ const Game = ({ roomCode, playerCount, playerName, onExit }) => {
         }
     }, 5000);
 
-    // Status checking interval (dynamic host)
+    // Status checking interval: Each client checks everyone to prevent stale host issues.
     const statusCheckInterval = setInterval(() => {
-        const localGameState = gameStateRef.current; // Use state from ref to avoid stale closures
-        if (!localGameState) return;
+        const localGameState = gameStateRef.current;
+        if (!localGameState || isSpectator || myPlayerId === null) {
+            return;
+        }
 
-        const activePlayers = localGameState.players.filter(p => p.isClaimed && !p.isSpectator);
-        if (activePlayers.length === 0) return;
+        const now = Date.now();
+        let needsUpdate = false;
+        const activePlayersCountBeforeUpdate = localGameState.players.filter(p => p.isClaimed && !p.isSpectator).length;
 
-        const activeHostId = activePlayers.map(p => p.id).sort((a, b) => a - b)[0];
-
-        if (myPlayerId === activeHostId) {
-            const now = Date.now();
-            let needsUpdate = false;
-            const activePlayersCountBeforeUpdate = activePlayers.length;
-
-            const newPlayers = localGameState.players.map(p => {
-                const playerCopy = {...p}; // Work on a copy
-                if (!playerCopy.isClaimed || playerCopy.isSpectator) return playerCopy;
-                
-                const lastSeen = lastSeenTimestampsRef.current[playerCopy.id] || 0;
-                
-                if (now - lastSeen > 600000) { // 10 minutes timeout
-                    needsUpdate = true;
-                    // Reset the player slot instead of making them a spectator
-                    const initialPlayerState = createInitialState(playerCount).players[playerCopy.id];
-                    return { ...initialPlayerState, id: playerCopy.id };
-                }
-
-                let newStatus = playerCopy.status;
-                if (now - lastSeen > 60000) { // 60 seconds
-                    newStatus = 'disconnected';
-                } else if (now - lastSeen > 10000) { // 10 seconds
-                    newStatus = 'away';
-                } else {
-                    newStatus = 'online';
-                }
-
-                if (newStatus !== playerCopy.status) {
-                    needsUpdate = true;
-                    playerCopy.status = newStatus;
-                }
+        const newPlayers = localGameState.players.map(p => {
+            const playerCopy = {...p};
+            if (!playerCopy.isClaimed || playerCopy.isSpectator) {
                 return playerCopy;
-            });
+            }
             
+            const lastSeen = lastSeenTimestampsRef.current[playerCopy.id] || 0;
+            
+            // Timeout check (10 minutes)
+            if (now - lastSeen > 600000) {
+                // If player is still marked as claimed, reset them.
+                const initialPlayerState = createInitialState(playerCount).players[playerCopy.id];
+                needsUpdate = true;
+                return { ...initialPlayerState, id: playerCopy.id };
+            }
+
+            // Status update check
+            let newStatus = playerCopy.status;
+            if (now - lastSeen > 60000) { // 60 seconds
+                newStatus = 'disconnected';
+            } else if (now - lastSeen > 10000) { // 10 seconds
+                newStatus = 'away';
+            } else {
+                newStatus = 'online';
+            }
+
+            if (newStatus !== playerCopy.status) {
+                needsUpdate = true;
+                playerCopy.status = newStatus;
+            }
+            return playerCopy;
+        });
+
+        // We only publish if a state change was detected.
+        // The versioning on the receiver side will handle race conditions.
+        if (needsUpdate) {
             const remainingPlayersAfterUpdate = newPlayers.filter(p => p.isClaimed && !p.isSpectator);
             
             if (remainingPlayersAfterUpdate.length === 1 && activePlayersCountBeforeUpdate > 1 && !localGameState.isGameOver) {
@@ -200,14 +215,12 @@ const Game = ({ roomCode, playerCount, playerName, onExit }) => {
                     isGameOver: true,
                     gameMessage: `${remainingPlayersAfterUpdate[0].name} победил, так как все остальные игроки вышли!`,
                 });
-                return;
+                return; // End early if game is over
             }
-
-            if (needsUpdate) {
-                publishState({ ...localGameState, players: newPlayers });
-            }
+            
+            publishState({ ...localGameState, players: newPlayers });
         }
-    }, 2000);
+    }, 5000); // Check every 5 seconds
 
     client.on('error', () => setConnectionStatus('error'));
     client.on('offline', () => setConnectionStatus('reconnecting'));
@@ -450,6 +463,9 @@ const Game = ({ roomCode, playerCount, playerName, onExit }) => {
   };
   
   const handleLeaveGame = () => {
+      if (isVoiceConnected) {
+        disconnectFromVoice();
+      }
       if (myPlayerId === null || isSpectator) {
         onExit(); // If spectator or not really in game, just exit to lobby
         return;
@@ -574,17 +590,53 @@ const Game = ({ roomCode, playerCount, playerName, onExit }) => {
       displayMessage = `${gameState.gameMessage} Ожидание, пока хост начнет новую игру.`;
   }
 
+  const VoiceControlButton = () => {
+    let title, iconPath, classes;
+
+    if (isVoiceConnected) {
+      if (isMuted) {
+        title = "Включить микрофон";
+        classes = "bg-red-600 hover:bg-red-700";
+        iconPath = React.createElement('path', { strokeLinecap: "round", strokeLinejoin: "round", d: "M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3zM1 11h2m16 0h2" });
+
+      } else {
+        title = "Выключить микрофон";
+        classes = "bg-green-600 hover:bg-green-700";
+        iconPath = React.createElement('path', { strokeLinecap: "round", strokeLinejoin: "round", d: "M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" });
+      }
+    } else {
+      title = "Подключить голосовой чат";
+      classes = "bg-gray-600 hover:bg-gray-700";
+      iconPath = React.createElement('path', { strokeLinecap: "round", strokeLinejoin: "round", d: "M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3zM1 11h2m16 0h2" });
+    }
+
+    return React.createElement('button', {
+      onClick: () => isVoiceConnected ? toggleMute() : connectToVoice(),
+      onContextMenu: (e) => { e.preventDefault(); if (isVoiceConnected) disconnectFromVoice(); },
+      className: `p-2 rounded-lg font-bold transition-colors ${classes}`,
+      title: `${title} (ПКМ для отключения)`
+    },
+      React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "h-6 w-6", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor", strokeWidth: 2 },
+        iconPath
+      )
+    );
+  };
+
   return React.createElement(
     React.Fragment,
     null,
     showRules && React.createElement(RulesModal, { onClose: () => setShowRules(false) }),
     isSpectatorsModalOpen && React.createElement(SpectatorsModal, { spectators: gameState.spectators, onClose: () => setIsSpectatorsModalOpen(false) }),
+    React.createElement('div', { id: "audio-container", style: { display: 'none' } }),
     React.createElement(
       'div', { className: "w-full h-full flex flex-col p-4 text-white overflow-hidden" },
       React.createElement('header', { className: "flex justify-between items-center mb-4 flex-shrink-0" },
         React.createElement('div', { className: "p-2 bg-black/50 rounded-lg text-sm" }, React.createElement('p', { className: "font-mono" }, `КОД КОМНАТЫ: ${roomCode}`)),
         React.createElement('h1', { onClick: () => setShowRules(true), className: "font-ruslan text-4xl text-yellow-300 cursor-pointer hover:text-yellow-200 transition-colors", title: "Показать правила" }, 'ТЫСЯЧА'),
-        React.createElement('button', { onClick: handleLeaveGame, className: "px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg font-bold" }, isSpectator ? 'Вернуться в лобби' : 'Выйти из игры')
+        React.createElement('div', { className: 'flex items-center gap-2' },
+          myPlayerId !== null && !isSpectator && React.createElement(VoiceControlButton),
+          React.createElement('button', { onClick: handleLeaveGame, className: "px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg font-bold" }, isSpectator ? 'Вернуться в лобби' : 'Выйти из игры')
+        )
       ),
       React.createElement('div', { className: "flex-grow flex flex-col lg:grid lg:grid-cols-4 gap-4 min-h-0" },
         React.createElement('aside', { className: `lg:col-span-1 bg-slate-800/80 p-4 rounded-xl border border-slate-700 flex flex-col transition-all duration-500 ease-in-out ${isScoreboardExpanded ? 'h-full' : 'flex-shrink-0'}` },
@@ -612,8 +664,13 @@ const Game = ({ roomCode, playerCount, playerName, onExit }) => {
           React.createElement('div', { className: "flex-grow overflow-y-auto relative" },
             React.createElement('table', { className: "w-full text-sm text-left text-gray-300" },
               React.createElement('thead', { className: "text-xs text-yellow-300 uppercase bg-slate-800 sticky top-0 z-10" },
-                React.createElement('tr', null, gameState.players.map((player, index) =>
-                  React.createElement('th', { key: player.id, scope: "col", className: `h-16 px-0 py-0 text-center align-middle transition-all duration-300 relative ${index === gameState.currentPlayerIndex && !gameState.isGameOver ? 'bg-yellow-400 text-slate-900' : 'bg-slate-700/50'} ${index === myPlayerId ? 'outline outline-2 outline-blue-400' : ''}` },
+                React.createElement('tr', null, gameState.players.map((player, index) => {
+                  const isSpeaking = speakingPeers.has(player.id);
+                  let headerClasses = `h-16 px-0 py-0 text-center align-middle transition-all duration-300 relative ${index === gameState.currentPlayerIndex && !gameState.isGameOver ? 'bg-yellow-400 text-slate-900' : 'bg-slate-700/50'}`;
+                  if (index === myPlayerId) headerClasses += ' outline outline-2 outline-blue-400';
+                  if (isSpeaking) headerClasses += ' ring-2 ring-green-400 animate-pulse';
+
+                  return React.createElement('th', { key: player.id, scope: "col", className: headerClasses },
                     player.isSpectator
                       ? React.createElement('span', { className: "px-2 text-gray-500 italic" }, 'Вышел')
                       : !player.isClaimed
@@ -621,8 +678,8 @@ const Game = ({ roomCode, playerCount, playerName, onExit }) => {
                           ? React.createElement('button', { onClick: () => handleJoin(index), className: "w-full h-full bg-green-600 hover:bg-green-700 font-bold text-white transition-colors" }, "Войти")
                           : React.createElement('span', { className: "px-2 text-gray-400" }, `Место ${index + 1}`)
                         : React.createElement('div', null, React.createElement('span', { className: "px-2" }, player.name), React.createElement(PlayerStatus, { player: player }))
-                  )
-                ))
+                  );
+                 }))
               ),
               React.createElement('tbody', { className: `lg:table-row-group ${isScoreboardExpanded ? '' : 'hidden'}` },
                 (() => {
