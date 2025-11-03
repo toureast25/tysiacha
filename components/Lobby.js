@@ -194,7 +194,7 @@ const Lobby = ({ onStartGame }) => {
         {
           onClick: handleStart,
           className: "w-full py-3 bg-green-600 hover:bg-green-700 rounded-lg text-xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed",
-          disabled: roomCode.trim().length < 4 || playerName.trim().length < 3
+          disabled: roomCode.trim().length < 4 || playerName.trim().length < 3 || (isJoining && roomStatus?.status === 'not_found')
         },
         isJoining ? 'Войти' : 'Начать игру'
       ),
