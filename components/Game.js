@@ -1,7 +1,7 @@
 // 
 import React from 'react';
 import { MQTT_BROKER_URL, MQTT_TOPIC_PREFIX } from '../constants.js';
-import { analyzeDice, validateSelection, calculateTotalScore, createInitialState } from '../utils/gameLogic.js';
+import { analyzeDice, validateSelection, calculateTotalScore, createInitialState, findNextHost } from '../utils/gameLogic.js';
 import RulesModal from './RulesModal.js';
 import SpectatorsModal from './SpectatorsModal.js';
 import { DiceIcon, SmallDiceIcon } from './Dice.js';
@@ -218,17 +218,14 @@ const Game = ({ roomCode, playerCount, playerName, onExit }) => {
         if (needsUpdate) {
             let newState = { ...localGameState, players: newPlayers };
             
-            // Check if the original host has left in the new player list
-            const originalHost = newPlayers.find(p => p.id === localGameState.hostId);
-            if (originalHost && (!originalHost.isClaimed || originalHost.isSpectator)) {
-                const nextHost = newPlayers
-                    .filter(p => p.isClaimed && !p.isSpectator)
-                    .sort((a, b) => a.id - b.id)[0];
-                
-                if (nextHost) {
-                    newState.hostId = nextHost.id;
-                }
+            let newHostId = localGameState.hostId;
+            const currentHost = localGameState.hostId !== null ? newPlayers.find(p => p.id === localGameState.hostId) : null;
+    
+            // Re-evaluate host if: there is no host, the current host is gone, or the current host is not 'online'.
+            if (localGameState.hostId === null || !currentHost || !currentHost.isClaimed || currentHost.isSpectator || currentHost.status !== 'online') {
+                newHostId = findNextHost(newPlayers);
             }
+            newState.hostId = newHostId;
             
             const remainingPlayersAfterUpdate = newPlayers.filter(p => p.isClaimed && !p.isSpectator);
             
@@ -457,14 +454,30 @@ const Game = ({ roomCode, playerCount, playerName, onExit }) => {
       if (myPlayerId !== gameState.hostId) return; // Only host can start a new game
 
       const newInitialState = createInitialState(playerCount);
+      const oldPlayers = gameState.players;
+      
       const newPlayers = newInitialState.players.map((p, i) => {
-          const oldPlayer = gameState.players[i];
+          const oldPlayer = oldPlayers[i];
           if (oldPlayer && oldPlayer.isClaimed && !oldPlayer.isSpectator) {
-              return { ...p, name: oldPlayer.name, isClaimed: true, status: 'offline' };
+              // Preserve host's online status to prevent them from losing host role immediately
+              const status = (i === gameState.hostId) ? 'online' : 'offline';
+              return { ...p, name: oldPlayer.name, isClaimed: true, status: status };
           }
           return p;
       });
-      publishState({ ...newInitialState, players: newPlayers, turnStartTime: Date.now() });
+
+      const newHostId = gameState.hostId;
+      // The host should start the new game.
+      const firstPlayerIndex = newHostId;
+      
+      publishState({ 
+          ...newInitialState, 
+          players: newPlayers, 
+          hostId: newHostId,
+          currentPlayerIndex: firstPlayerIndex, // Host starts
+          gameMessage: `Новая игра! Ход ${newPlayers[newHostId].name}.`,
+          turnStartTime: Date.now() 
+      });
   };
 
 
@@ -480,13 +493,19 @@ const Game = ({ roomCode, playerCount, playerName, onExit }) => {
       }
       return p;
     });
+    
+    let newHostId = state.hostId;
+    // If there's no host, the joining player becomes the new host.
+    if (state.hostId === null) {
+      newHostId = playerIndex;
+    }
 
     const claimedPlayerCount = newPlayers.filter(p => p.isClaimed && !p.isSpectator).length;
     const gameMessage = claimedPlayerCount > 1
-        ? `Ход ${state.players[state.currentPlayerIndex].name}. Бросайте кости!`
+        ? `Ход ${newPlayers[state.currentPlayerIndex].name}. Бросайте кости!`
         : `Ожидание игроков...`;
 
-    publishState({ ...state, players: newPlayers, gameMessage });
+    publishState({ ...state, players: newPlayers, gameMessage, hostId: newHostId });
   };
   
   const handleLeaveGame = () => {
@@ -506,11 +525,9 @@ const Game = ({ roomCode, playerCount, playerName, onExit }) => {
       
       let newHostId = state.hostId;
       if (myPlayerId === state.hostId) {
-          const nextHost = newPlayers
-              .filter(p => p.isClaimed && !p.isSpectator)
-              .sort((a, b) => a.id - b.id)[0];
-          if (nextHost) {
-              newHostId = nextHost.id;
+          const nextHostId = findNextHost(newPlayers);
+          if (nextHostId !== null) {
+              newHostId = nextHostId;
           }
       }
       

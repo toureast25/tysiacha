@@ -135,3 +135,17 @@ export const createInitialState = (pCount) => {
     version: 1,
   };
 };
+
+export const findNextHost = (players) => {
+    const candidates = players.filter(p => p.isClaimed && !p.isSpectator);
+    if (candidates.length === 0) return null; // No one left to be host
+
+    // Only 'online' players can be host.
+    const onlinePlayers = candidates.filter(p => p.status === 'online').sort((a, b) => a.id - b.id);
+    if (onlinePlayers.length > 0) {
+        return onlinePlayers[0].id;
+    }
+    
+    // If no one is online, there is no host.
+    return null;
+};
