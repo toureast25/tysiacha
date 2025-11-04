@@ -453,40 +453,53 @@ const Game = ({ roomCode, playerCount, playerName, onExit }) => {
   const handleNewGame = () => {
       if (myPlayerId !== gameState.hostId) return;
 
-      // 1. Get a completely fresh state. This is the foundation.
-      const newState = createInitialState(playerCount);
-      const oldPlayers = gameState.players;
+      const oldState = gameState;
 
-      // 2. Go through the old players. If a player is still active,
-      //    update the corresponding slot in the NEW state.
-      oldPlayers.forEach(oldPlayer => {
+      // Safely construct the new players array.
+      // For each possible player slot (from 0 to playerCount-1)...
+      const newPlayers = Array.from({ length: playerCount }, (_, index) => {
+          // Find the corresponding player from the old state.
+          const oldPlayer = oldState.players.find(p => p && p.id === index);
+
+          // If the old player was active (claimed and not a spectator)...
           if (oldPlayer && oldPlayer.isClaimed && !oldPlayer.isSpectator) {
-              const playerIndex = oldPlayer.id;
-              // Update the player slot in our new, clean state
-              newState.players[playerIndex] = {
-                  ...newState.players[playerIndex], // Start with the clean player object
+              // ...carry them over, but create a clean object for them.
+              return {
+                  id: oldPlayer.id,
                   name: oldPlayer.name,
+                  scores: [], // CRITICAL: Reset scores.
                   isClaimed: true,
-                  // The host is the one clicking, so they are online.
-                  // Others will send heartbeats to update their status.
-                  status: oldPlayer.id === gameState.hostId ? 'online' : 'offline',
+                  // The host clicking the button is definitely online.
+                  status: oldPlayer.id === oldState.hostId ? 'online' : 'offline',
+                  isSpectator: false,
               };
           }
+          
+          // ...otherwise, return a fresh, empty player slot.
+          const cleanPlayerSlot = createInitialState(1).players[0];
+          return {
+              ...cleanPlayerSlot,
+              id: index,
+              name: `Игрок ${index + 1}`,
+          };
       });
 
-      // 3. Set the host and starting player.
-      newState.hostId = gameState.hostId;
-      newState.currentPlayerIndex = gameState.hostId; // Host starts
+      // Find the name of the starting player (the host) from the newly created list.
+      const hostPlayer = newPlayers.find(p => p.id === oldState.hostId);
+      const startingPlayerName = hostPlayer ? hostPlayer.name : 'Игрок';
 
-      // 4. Set the game message.
-      const startingPlayerName = newState.players[newState.currentPlayerIndex].name;
-      newState.gameMessage = `Новая игра! Ход ${startingPlayerName}.`;
+      // Assemble the final new state, starting from a clean slate.
+      const finalState = {
+          ...createInitialState(playerCount), // Start with a fresh game state.
+          players: newPlayers, // Use our safely constructed player list.
+          spectators: oldState.spectators, // Keep the spectators.
+          hostId: oldState.hostId,
+          currentPlayerIndex: oldState.hostId, // The host always starts.
+          gameMessage: `Новая игра! Ход ${startingPlayerName}.`,
+          turnStartTime: Date.now(),
+      };
       
-      // 5. Set the start time.
-      newState.turnStartTime = Date.now();
-
-      // 6. Publish the completely rebuilt state.
-      publishState(newState);
+      publishState(finalState);
   };
 
 
@@ -713,7 +726,7 @@ const Game = ({ roomCode, playerCount, playerName, onExit }) => {
               ),
               React.createElement('tbody', { className: `lg:table-row-group ${isScoreboardExpanded ? '' : 'hidden'}` },
                 (() => {
-                  const maxRounds = gameState.players.reduce((max, p) => Math.max(max, p.scores.length), 0);
+                  const maxRounds = gameState.players.reduce((max, p) => Math.max(max, (p && p.scores ? p.scores.length : 0)), 0);
                   if (maxRounds === 0) return React.createElement('tr', null, React.createElement('td', { colSpan: playerCount, className: "py-4 px-2 text-center text-gray-400 italic" }, 'Еще не было записано очков.'));
                   const rows = [];
                   for (let i = 0; i < maxRounds; i++) {
