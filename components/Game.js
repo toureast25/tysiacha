@@ -597,15 +597,20 @@ const Game = ({ roomCode, playerName, onExit }) => {
     let newState = { ...state, joinRequests: remainingRequests };
 
     if (accepted) {
-        const firstAvailableIndex = newState.players.findIndex(p => !p.isClaimed);
-        if (firstAvailableIndex !== -1) {
+        const lastClaimedIndex = newState.players.map(p => p.isClaimed).lastIndexOf(true);
+        let joinIndex = newState.players.findIndex((p, i) => !p.isClaimed && i > lastClaimedIndex);
+        if (joinIndex === -1) {
+            joinIndex = newState.players.findIndex(p => !p.isClaimed);
+        }
+
+        if (joinIndex !== -1) {
             const restoredScore = newState.leavers?.[request.name] || 0;
             const initialScores = restoredScore > 0 ? [restoredScore] : [];
             const newLeavers = { ...newState.leavers };
             if (restoredScore > 0) delete newLeavers[request.name];
 
             const newPlayers = newState.players.map((p, i) =>
-                i === firstAvailableIndex
+                i === joinIndex
                 ? { ...p, name: request.name, isClaimed: true, scores: initialScores, status: 'online', isSpectator: false, sessionId: request.sessionId, hasEnteredGame: restoredScore > 0 } // Восстанавливаем статус входа
                 : p
             );
@@ -667,10 +672,15 @@ const Game = ({ roomCode, playerName, onExit }) => {
         };
         publishState(newState, true);
     } else {
-        const lastAvailableIndex = state.players.reduce((last, p, i) => (!p.isClaimed && !p.isSpectator ? i : last), -1);
-        if (lastAvailableIndex === -1) return;
+        const lastClaimedIndex = state.players.map(p => p.isClaimed).lastIndexOf(true);
+        let joinIndex = state.players.findIndex((p, i) => !p.isClaimed && i > lastClaimedIndex);
+        if (joinIndex === -1) {
+            joinIndex = state.players.findIndex(p => !p.isClaimed);
+        }
 
-        setMyPlayerId(lastAvailableIndex);
+        if (joinIndex === -1) return;
+
+        setMyPlayerId(joinIndex);
 
         const restoredScore = state.leavers?.[playerName] || 0;
         const initialScores = restoredScore > 0 ? [restoredScore] : [];
@@ -678,7 +688,7 @@ const Game = ({ roomCode, playerName, onExit }) => {
         if (restoredScore > 0) delete newLeavers[playerName];
 
         const newPlayers = state.players.map((p, i) => {
-            if (i === lastAvailableIndex) {
+            if (i === joinIndex) {
                 return { ...p, name: playerName, isClaimed: true, scores: initialScores, status: 'online', isSpectator: false, sessionId: mySessionIdRef.current, hasEnteredGame: restoredScore > 0 };
             }
             return p;
@@ -686,7 +696,7 @@ const Game = ({ roomCode, playerName, onExit }) => {
 
         let newHostId = state.hostId;
         if (state.hostId === null || !newPlayers.some(p => p.id === state.hostId && p.isClaimed)) {
-            newHostId = findNextHost(newPlayers) ?? lastAvailableIndex;
+            newHostId = findNextHost(newPlayers) ?? joinIndex;
         }
 
         const claimedPlayerCount = newPlayers.filter(p => p.isClaimed && !p.isSpectator).length;
