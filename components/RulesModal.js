@@ -158,6 +158,23 @@ const RulesModal = ({ onClose }) => {
             React.createElement('li', null, 'Ответственность игрока: Игра не подсказывает комбинации. Вы сами должны их находить и правильно откладывать.'),
             React.createElement('li', null, 'Дополнение комбинации: Если вы отложили часть комбинации (например, 3 шестерки из 4-х выпавших), вы можете до-отложить оставшуюся кость в рамках того же броска.')
           )
+        ),
+        React.createElement(
+          'section',
+          null,
+          React.createElement('h3', { className: "text-xl font-bold text-yellow-400 mb-2" }, '6. Штрафы'),
+          React.createElement(
+            'dl',
+            null,
+            React.createElement('dt', { className: "font-semibold text-lg text-white" }, 'Штраф за обгон'),
+            React.createElement(
+              'dd',
+              { className: "ml-4 mb-2" },
+              'Если другой игрок своим ходом догоняет или обгоняет вас по очкам, вы получаете штраф -50 очков. Штраф применяется, только если у вас было 100 или более очков.'
+            ),
+            React.createElement('dt', { className: "font-semibold text-lg text-white" }, 'Штраф на бочке'),
+            React.createElement('dd', { className: "ml-4" }, 'Если вы находитесь "на бочке" (200-300 или 700-800 очков) и получаете три "болта" подряд, вы получаете штраф. Ваш счёт откатывается до 150 или 650 очков соответственно.')
+          )
         )
       )
     )

@@ -204,14 +204,32 @@ const Lobby = ({ onStartGame }) => {
           { htmlFor: "roomCode", className: "block text-lg font-semibold text-gray-300 mb-2" },
           'Код комнаты'
         ),
-        React.createElement('input', {
-          id: "roomCode",
-          type: "text",
-          value: roomCode,
-          onChange: (e) => setRoomCode(e.target.value.toUpperCase()),
-          placeholder: "Введите код",
-          className: "w-full p-3 text-center bg-slate-900 border-2 border-slate-600 rounded-lg text-2xl font-mono tracking-widest text-white focus:outline-none focus:border-yellow-400 transition-colors"
-        }),
+        React.createElement(
+            'div',
+            { className: 'relative flex items-center' },
+            React.createElement('input', {
+              id: "roomCode",
+              type: "text",
+              value: roomCode,
+              onChange: (e) => setRoomCode(e.target.value.toUpperCase()),
+              placeholder: "Введите код",
+              className: "w-full p-3 pr-12 text-center bg-slate-900 border-2 border-slate-600 rounded-lg text-2xl font-mono tracking-widest text-white focus:outline-none focus:border-yellow-400 transition-colors"
+            }),
+            React.createElement(
+                'button',
+                {
+                    onClick: generateRoomCode,
+                    className: "absolute inset-y-0 right-0 flex items-center px-3 text-gray-400 hover:text-yellow-300 transition-colors focus:outline-none",
+                    'aria-label': "Сгенерировать новый код",
+                    title: "Сгенерировать новый код"
+                },
+                React.createElement(
+                    'svg',
+                    { xmlns: "http://www.w3.org/2000/svg", className: "h-6 w-6", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor", strokeWidth: 2 },
+                    React.createElement('path', { strokeLinecap: "round", strokeLinejoin: "round", d: "M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0011.664 0l3.18-3.182m0-11.664a8.25 8.25 0 00-11.664 0L2.985 7.982" })
+                )
+            )
+        ),
         React.createElement(RoomStatusInfo, null)
       ),
       React.createElement(
