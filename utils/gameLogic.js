@@ -130,6 +130,7 @@ export const createInitialState = () => {
         status: 'offline', // 'online', 'away', 'disconnected'
         isSpectator: false,
         hasEnteredGame: false, // Для правила "входа в игру" (старт)
+        barrelBolts: 0,
     })),
     spectators: [],
     leavers: {}, // Track scores of players who left
