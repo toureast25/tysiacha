@@ -284,7 +284,7 @@ const Game = ({ roomCode, playerCount, playerName, onExit }) => {
       const nextPlayer = newPlayers[nextPlayerIndex];
 
       const boltState = {
-        ...createInitialState(playerCount),
+        ...createInitialState(state.players.length),
         players: newPlayers,
         spectators: state.spectators,
         hostId: state.hostId,
@@ -417,7 +417,7 @@ const Game = ({ roomCode, playerCount, playerName, onExit }) => {
       const newPlayersWithBolt = state.players.map((p, i) => i === state.currentPlayerIndex ? { ...p, scores: [...p.scores, '/'] } : p);
       const nextIdx = findNextActivePlayer(state.currentPlayerIndex, newPlayersWithBolt);
       const nextPlayerName = newPlayersWithBolt[nextIdx].name;
-      const boltState = { ...createInitialState(playerCount), players: newPlayersWithBolt, spectators: state.spectators, hostId: state.hostId, currentPlayerIndex: nextIdx, gameMessage: `${currentPlayer.name} получает болт. Ход ${nextPlayerName}.`, turnStartTime: Date.now() };
+      const boltState = { ...createInitialState(state.players.length), players: newPlayersWithBolt, spectators: state.spectators, hostId: state.hostId, currentPlayerIndex: nextIdx, gameMessage: `${currentPlayer.name} получает болт. Ход ${nextPlayerName}.`, turnStartTime: Date.now() };
       publishState(boltState, true);
       return;
     }
@@ -426,14 +426,14 @@ const Game = ({ roomCode, playerCount, playerName, onExit }) => {
     const totalScore = calculateTotalScore(newPlayers[state.currentPlayerIndex]);
     
     if (totalScore >= 1000) {
-      const winState = { ...createInitialState(playerCount), players: newPlayers, spectators: state.spectators, hostId: state.hostId, isGameOver: true, gameMessage: `${currentPlayer.name} победил, набрав ${totalScore} очков!` };
+      const winState = { ...createInitialState(state.players.length), players: newPlayers, spectators: state.spectators, hostId: state.hostId, isGameOver: true, gameMessage: `${currentPlayer.name} победил, набрав ${totalScore} очков!` };
       publishState(winState, true);
       return;
     }
 
     const nextPlayerIndex = findNextActivePlayer(state.currentPlayerIndex, newPlayers);
     const nextPlayerName = newPlayers[nextPlayerIndex].name;
-    const bankState = { ...createInitialState(playerCount), players: newPlayers, spectators: state.spectators, hostId: state.hostId, currentPlayerIndex: nextPlayerIndex, gameMessage: `${currentPlayer.name} записал ${finalTurnScore} очков. Ход ${nextPlayerName}.`, turnStartTime: Date.now() };
+    const bankState = { ...createInitialState(state.players.length), players: newPlayers, spectators: state.spectators, hostId: state.hostId, currentPlayerIndex: nextPlayerIndex, gameMessage: `${currentPlayer.name} записал ${finalTurnScore} очков. Ход ${nextPlayerName}.`, turnStartTime: Date.now() };
     publishState(bankState, true);
   };
 
@@ -447,7 +447,7 @@ const Game = ({ roomCode, playerCount, playerName, onExit }) => {
     const newPlayers = state.players.map((p, i) => i === state.currentPlayerIndex ? { ...p, scores: [...p.scores, '/'] } : p);
     const nextIdx = findNextActivePlayer(state.currentPlayerIndex, newPlayers);
     const nextPlayerName = newPlayers[nextIdx].name;
-    publishState({ ...createInitialState(playerCount), players: newPlayers, spectators: state.spectators, hostId: state.hostId, currentPlayerIndex: nextIdx, gameMessage: `${currentPlayer.name} пропустил ход. Ход ${nextPlayerName}.`, turnStartTime: Date.now() });
+    publishState({ ...createInitialState(state.players.length), players: newPlayers, spectators: state.spectators, hostId: state.hostId, currentPlayerIndex: nextIdx, gameMessage: `${currentPlayer.name} пропустил ход. Ход ${nextPlayerName}.`, turnStartTime: Date.now() });
   }
 
   const handleNewGame = () => {
@@ -573,10 +573,10 @@ const Game = ({ roomCode, playerCount, playerName, onExit }) => {
               gameMessage: `${remainingPlayers[0].name} победил, так как все остальные игроки вышли!`,
           };
       } else if (remainingPlayers.length === 0) {
-          finalState = createInitialState(playerCount);
+          finalState = createInitialState(state.players.length);
           finalState.gameMessage = 'Все игроки вышли. Игра окончена.';
       } else {
-          const cleanState = createInitialState(playerCount);
+          const cleanState = createInitialState(state.players.length);
           const nextPlayerName = newPlayers[nextPlayerIndex].name;
           finalState = {
               ...cleanState,
@@ -704,7 +704,7 @@ const Game = ({ roomCode, playerCount, playerName, onExit }) => {
                 React.createElement('tr', null, (() => {
                   const canJoin = myPlayerId === null && !isSpectator;
                   const claimedPlayerCount = gameState.players.filter(p => p.isClaimed && !p.isSpectator).length;
-                  const availableSlots = playerCount - claimedPlayerCount;
+                  const availableSlots = gameState.players.length - claimedPlayerCount;
                   let joinButtonRendered = false;
 
                   return gameState.players.map(player => {
@@ -745,10 +745,10 @@ const Game = ({ roomCode, playerCount, playerName, onExit }) => {
                   const maxRounds = gameState.players.reduce((max, p) => Math.max(max, (p.scores ? p.scores.length : 0)), 0);
 
                   if (!hasAnyPlayerJoined) {
-                     return React.createElement('tr', null, React.createElement('td', { colSpan: playerCount, className: "py-4 px-2 text-center text-gray-400 italic" }, 'Ожидание игроков...'));
+                     return React.createElement('tr', null, React.createElement('td', { colSpan: gameState.players.length, className: "py-4 px-2 text-center text-gray-400 italic" }, 'Ожидание игроков...'));
                   }
                   if (maxRounds === 0) {
-                     return React.createElement('tr', null, React.createElement('td', { colSpan: playerCount, className: "py-4 px-2 text-center text-gray-400 italic" }, 'Еще не было записано очков.'));
+                     return React.createElement('tr', null, React.createElement('td', { colSpan: gameState.players.length, className: "py-4 px-2 text-center text-gray-400 italic" }, 'Еще не было записано очков.'));
                   }
                   
                   const rows = [];
