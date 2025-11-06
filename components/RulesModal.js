@@ -125,25 +125,57 @@ const RulesModal = ({ onClose }) => {
         React.createElement(
           'section',
           null,
-          React.createElement('h3', { className: "text-xl font-bold text-yellow-400 mb-2" }, '4. Особые ситуации'),
+          React.createElement('h3', { className: "text-xl font-bold text-yellow-400 mb-2" }, '4. Особые ситуации и Штрафы'),
           React.createElement(
             'dl',
-            null,
-            React.createElement('dt', { className: "font-semibold text-lg text-white" }, 'Болт'),
-            React.createElement(
-              'dd',
-              { className: "ml-4 mb-2" },
-              'Вы получаете "Болт" (отмечается как / в таблице), если:',
-              React.createElement(
-                'ul',
-                { className: "list-disc list-inside mt-1" },
-                React.createElement('li', null, 'Ваш бросок не принес ни одной очковой кости или комбинации.'),
-                React.createElement('li', null, 'Вы решили записать счёт, набрав 0 очков за ход.')
-              ),
-              'При получении "Болта" все очки, набранные в текущем ходу, сгорают, и ход переходит к следующему игроку.'
+            { className: "space-y-4" },
+            React.createElement('div', null,
+                React.createElement('dt', { className: "font-semibold text-lg text-white" }, 'Вход в игру ("открытие" счёта)'),
+                React.createElement(
+                    'dd',
+                    { className: "ml-4" },
+                    'Чтобы начать набирать очки, ваш первый результативный ход должен быть 50 очков или больше. Если вы записываете меньше 50, эти очки сгорают, а ваш общий счёт остаётся нулевым.'
+                )
             ),
-            React.createElement('dt', { className: "font-semibold text-lg text-white" }, 'Горячие кости (Hot Dice)'),
-            React.createElement('dd', { className: "ml-4" }, 'Если вы смогли отложить все 5 костей, вы можете сделать новый бросок всеми 5 костями, продолжая свой ход. Накопленные очки при этом сохраняются.')
+            React.createElement('div', null,
+                React.createElement('dt', { className: "font-semibold text-lg text-white" }, 'Болт'),
+                React.createElement(
+                  'dd',
+                  { className: "ml-4" },
+                  'Вы получаете "Болт" (отмечается как /), если:',
+                  React.createElement(
+                    'ul',
+                    { className: "list-disc list-inside mt-1" },
+                    React.createElement('li', null, 'Ваш бросок не принес ни одной очковой кости или комбинации.'),
+                    React.createElement('li', null, 'Вы не набрали 50 очков для "входа в игру".'),
+                    React.createElement('li', null, 'Вы не смогли "сойти с бочки" (см. ниже).')
+                  ),
+                  'При получении "Болта" все очки, набранные в текущем ходу, сгорают, и ход переходит к следующему игроку.'
+                )
+            ),
+            React.createElement('div', null,
+                React.createElement('dt', { className: "font-semibold text-lg text-white" }, 'Горячие кости (Hot Dice)'),
+                React.createElement('dd', { className: "ml-4" }, 'Если вы смогли отложить все 5 костей, вы можете сделать новый бросок всеми 5 костями, продолжая свой ход. Накопленные очки при этом сохраняются.')
+            ),
+            React.createElement('div', null,
+                React.createElement('dt', { className: "font-semibold text-lg text-white" }, 'Штраф за обгон'),
+                React.createElement(
+                  'dd',
+                  { className: "ml-4" },
+                  'Если другой игрок своим ходом догоняет или обгоняет вас по очкам, вы получаете штраф -50 очков. Штраф применяется, только если у вас было 100 или более очков.'
+                )
+            ),
+            React.createElement('div', null,
+                React.createElement('dt', { className: "font-semibold text-lg text-white" }, 'Правила "Бочки"'),
+                React.createElement(
+                    'dd',
+                    { className: "ml-4 mt-1 space-y-2" },
+                     React.createElement('p', null, 'Игрок считается "на бочке", если его счёт находится в диапазоне 200-295 или 700-795 очков.'),
+                     React.createElement('p', null, React.createElement('strong', { className: 'text-yellow-400' }, 'Обязательный выход:'), ' Находясь на бочке, вы обязаны за один ход набрать столько очков, чтобы ваш суммарный счёт стал 300+ (или 800+). Если вы записываете ход, но итоговый счёт остаётся меньше 300 (или 800), вы получаете "болт" — все очки за ход сгорают.'),
+                     React.createElement('p', null, React.createElement('strong', { className: 'text-yellow-400' }, 'Штраф за 3 болта:'), ' Если вы получаете три "болта" подряд, находясь на одной и той же бочке, ваш счёт откатывается до 150 (или 650) очков соответственно.'),
+                     React.createElement('p', null, React.createElement('strong', { className: 'text-yellow-400' }, 'Столкновение:'), ' На одной "бочке" может быть только один игрок. Если вы своим ходом попадаете на бочку, где уже стоит другой игрок, тот игрок "сбивается" и его счёт откатывается до 150 (или 650) очков.')
+                )
+            )
           )
         ),
         React.createElement(
@@ -157,33 +189,6 @@ const RulesModal = ({ onClose }) => {
             React.createElement('li', null, 'Отложить: Перетащите выбранные кости в зону игрового поля или сделайте двойной клик по одной из них.'),
             React.createElement('li', null, 'Ответственность игрока: Игра не подсказывает комбинации. Вы сами должны их находить и правильно откладывать.'),
             React.createElement('li', null, 'Дополнение комбинации: Если вы отложили часть комбинации (например, 3 шестерки из 4-х выпавших), вы можете до-отложить оставшуюся кость в рамках того же броска.')
-          )
-        ),
-        React.createElement(
-          'section',
-          null,
-          React.createElement('h3', { className: "text-xl font-bold text-yellow-400 mb-2" }, '6. Штрафы'),
-          React.createElement(
-            'dl',
-            null,
-            React.createElement('dt', { className: "font-semibold text-lg text-white" }, 'Штраф за обгон'),
-            React.createElement(
-              'dd',
-              { className: "ml-4 mb-2" },
-              'Если другой игрок своим ходом догоняет или обгоняет вас по очкам, вы получаете штраф -50 очков. Штраф применяется, только если у вас было 100 или более очков.'
-            ),
-            React.createElement('dt', { className: "font-semibold text-lg text-white" }, 'Штраф на бочке'),
-            React.createElement(
-              'dd',
-              { className: "ml-4 mb-2" },
-              'Если вы находитесь "на бочке" (200-300 или 700-800 очков) и получаете три "болта" подряд, вы получаете штраф. Ваш счёт откатывается до 150 или 650 очков соответственно.'
-            ),
-            React.createElement('dt', { className: "font-semibold text-lg text-white" }, 'Столкновение на бочке'),
-            React.createElement(
-              'dd',
-              { className: "ml-4" },
-              'В границах одной "бочки" (200-300 или 700-800) может находиться только один игрок. Если вы своим ходом попадаете на бочку, на которой уже стоит другой игрок, тот игрок "сбивается" и его счёт откатывается до 150 (или 650) очков.'
-            )
           )
         )
       )
