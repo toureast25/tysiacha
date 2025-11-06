@@ -1147,13 +1147,13 @@ const Game = ({ roomCode, playerName, onExit }) => {
     isSpectatorsModalOpen && React.createElement(SpectatorsModal, { spectators: gameState.spectators, onClose: () => setIsSpectatorsModalOpen(false) }),
     React.createElement(
       'div', { className: "w-full h-full flex flex-col p-4 text-white overflow-hidden" },
-      React.createElement('header', { className: `flex justify-between items-center mb-4 flex-shrink-0 transition-opacity duration-300 ${isScoreboardExpanded ? 'opacity-0 pointer-events-none lg:opacity-100 lg:pointer-events-auto' : 'opacity-100'}` },
+      React.createElement('header', { className: "flex justify-between items-center mb-4 flex-shrink-0" },
         React.createElement('div', { className: "p-2 bg-black/50 rounded-lg text-sm" }, React.createElement('p', { className: "font-mono" }, `КОД КОМНАТЫ: ${roomCode}`)),
         React.createElement('h1', { onClick: () => setShowRules(true), className: "font-ruslan text-4xl text-yellow-300 cursor-pointer hover:text-yellow-200 transition-colors", title: "Показать правила" }, 'ТЫСЯЧА'),
         React.createElement('button', { onClick: handleLeaveGame, className: "px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg font-bold" }, isSpectator || canJoin ? 'Вернуться в лобби' : 'Выйти из игры')
       ),
       React.createElement('div', { className: "flex-grow flex flex-col lg:grid lg:grid-cols-4 gap-4 min-h-0" },
-        React.createElement('aside', { className: `bg-slate-800/80 p-4 border border-slate-700 flex flex-col transition-all duration-500 ease-in-out lg:col-span-1 ${isScoreboardExpanded ? 'fixed inset-x-4 top-24 bottom-4 z-40 rounded-xl lg:relative lg:inset-auto lg:z-auto' : 'flex-shrink-0 rounded-xl'}` },
+        React.createElement('aside', { className: `bg-slate-800/80 p-4 border border-slate-700 flex flex-col transition-all duration-500 ease-in-out lg:col-span-1 rounded-xl ${isScoreboardExpanded ? 'flex-grow' : 'flex-shrink-0'}` },
           React.createElement('div', { className: "flex justify-between items-center mb-4 flex-shrink-0" },
             React.createElement('h2', { className: "font-ruslan text-3xl text-yellow-300 flex items-baseline" },
               'Игроки',
@@ -1176,7 +1176,7 @@ const Game = ({ roomCode, playerName, onExit }) => {
             )
           ),
           React.createElement('div', { className: "flex-grow overflow-y-auto relative" },
-            React.createElement('table', { className: "w-full text-sm text-left text-gray-300" },
+            React.createElement('table', { className: "w-full text-sm text-left text-gray-300 border-collapse" },
               React.createElement('thead', { className: "text-xs text-yellow-300 uppercase bg-slate-800 sticky top-0 z-10" },
                 React.createElement('tr', null, 
                   gameState.players.map(player => {
@@ -1216,7 +1216,7 @@ const Game = ({ roomCode, playerName, onExit }) => {
                   })
                 )
               ),
-              React.createElement('tbody', { className: `lg:table-row-group ${isScoreboardExpanded ? '' : 'hidden'}` },
+              React.createElement('tbody', { className: `lg:table-row-group` },
                 (() => {
                   const hasAnyPlayerJoined = gameState.players.some(p => p.isClaimed || p.isSpectator || p.name !== `Игрок ${p.id + 1}`);
                   const maxRounds = gameState.players.reduce((max, p) => Math.max(max, (p.scores ? p.scores.length : 0)), 0);
@@ -1233,10 +1233,17 @@ const Game = ({ roomCode, playerName, onExit }) => {
                   
                   const rows = [];
                   for (let i = 0; i < maxRounds; i++) {
-                    rows.push(React.createElement('tr', { key: `round-row-${i}`, className: "border-b border-slate-700 hover:bg-slate-700/30" },
+                    rows.push(React.createElement('tr', { key: `round-row-${i}`, className: `hover:bg-slate-700/30 border-slate-700 ${isScoreboardExpanded ? 'border-b' : 'border-b-0'}` },
                       gameState.players.map(player =>
-                        React.createElement('td', { key: `cell-${player.id}-${i}`, className: "py-2 px-2 text-center font-mono" },
-                           (player.isClaimed || player.isSpectator || player.scores.length > i) && player.scores[i] !== undefined ? player.scores[i] : React.createElement('span', { className: "text-slate-500" }, '-')
+                        React.createElement('td', { 
+                            key: `cell-${player.id}-${i}`, 
+                            className: `text-center font-mono transition-all duration-500 ease-in-out ${isScoreboardExpanded ? 'p-2' : 'p-0'}` 
+                          },
+                          React.createElement('div', {
+                            className: `overflow-hidden transition-all duration-500 ease-in-out ${isScoreboardExpanded ? 'max-h-8' : 'max-h-0'}`
+                           },
+                             (player.isClaimed || player.isSpectator || player.scores.length > i) && player.scores[i] !== undefined ? player.scores[i] : React.createElement('span', { className: "text-slate-500" }, '-')
+                           )
                         )
                       )
                     ));
@@ -1256,7 +1263,7 @@ const Game = ({ roomCode, playerName, onExit }) => {
             )
           )
         ),
-        React.createElement('main', { className: `relative flex-grow lg:col-span-3 bg-slate-900/70 rounded-xl border-2 flex flex-col justify-between min-h-0 p-4 transition-all duration-300 ${isDragOver && isMyTurn ? 'border-green-400 shadow-2xl shadow-green-400/20' : 'border-slate-600'} ${isScoreboardExpanded ? 'opacity-0 pointer-events-none lg:opacity-100 lg:pointer-events-auto' : 'opacity-100'}`, onDragOver: (e) => {e.preventDefault(); setIsDragOver(true);}, onDrop: handleDrop, onDragLeave: () => setIsDragOver(false) },
+        React.createElement('main', { className: `relative lg:col-span-3 bg-slate-900/70 rounded-xl border-2 flex flex-col justify-between min-h-0 p-4 transition-all duration-500 ease-in-out ${isDragOver && isMyTurn ? 'border-green-400 shadow-2xl shadow-green-400/20' : 'border-slate-600'} ${isScoreboardExpanded ? 'flex-grow-0 opacity-0 pointer-events-none lg:flex-grow lg:opacity-100 lg:pointer-events-auto' : 'flex-grow'}`, onDragOver: (e) => {e.preventDefault(); setIsDragOver(true);}, onDrop: handleDrop, onDragLeave: () => setIsDragOver(false) },
           React.createElement(JoinRequestManager, null),
           React.createElement('div', { className: "w-full" },
             React.createElement('div', { className: `w-full p-3 mb-4 text-center rounded-lg ${gameState.isGameOver ? 'bg-green-600' : 'bg-slate-800'} border border-slate-600 flex items-center justify-center min-h-[72px]` },
