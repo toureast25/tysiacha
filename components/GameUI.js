@@ -130,7 +130,7 @@ const GameUI = (props) => {
                         return React.createElement('th', { 
                             key: `player-header-${player.id}`, 
                             scope: "col", 
-                            className: `h-14 sm:h-16 px-0 py-0 text-center align-middle transition-all duration-300 relative ${index === gameState.currentPlayerIndex && gameState.isGameStarted && !gameState.isGameOver && player.isClaimed ? 'bg-yellow-400 text-slate-900' : 'bg-slate-700/50'} ${index === myPlayerId ? 'outline outline-2 outline-blue-400' : ''}` 
+                            className: `h-14 sm:h-16 px-0 py-0 text-center align-middle transition-all duration-300 relative border-r border-slate-600 last:border-r-0 ${index === gameState.currentPlayerIndex && gameState.isGameStarted && !gameState.isGameOver && player.isClaimed ? 'bg-yellow-400 text-slate-900' : 'bg-slate-700/50'}` 
                         },
                           isUnclaimedAndEmpty
                             ? React.createElement('div', { className: "flex flex-col items-center justify-center h-full py-2 text-gray-500" },
@@ -179,7 +179,7 @@ const GameUI = (props) => {
                           gameState.players.map(player =>
                             React.createElement('td', { 
                                 key: `cell-${player.id}-${i}`, 
-                                className: `text-center font-mono transition-all duration-500 ease-in-out ${isScoreboardExpanded ? 'p-2' : 'p-0 lg:p-2'}` 
+                                className: `text-center font-mono transition-all duration-500 ease-in-out border-r border-slate-600 last:border-r-0 ${isScoreboardExpanded ? 'p-2' : 'p-0 lg:p-2'}` 
                               },
                               React.createElement('div', {
                                 className: `overflow-hidden transition-all duration-500 ease-in-out ${isScoreboardExpanded ? 'max-h-8' : 'max-h-0 lg:max-h-8'}`
@@ -197,7 +197,7 @@ const GameUI = (props) => {
                      React.createElement('tr', null, gameState.players.map((player) => {
                        const index = player.id;
                        const hasHistory = player.isClaimed || player.isSpectator || player.name !== `Игрок ${player.id + 1}`;
-                       return React.createElement('td', { key: `total-score-${player.id}`, className: `h-8 sm:h-10 px-1 sm:px-2 text-center text-lg font-mono align-middle transition-colors duration-300 ${index === gameState.currentPlayerIndex && gameState.isGameStarted && !gameState.isGameOver && player.isClaimed ? 'bg-yellow-400/80 text-slate-900' : 'bg-slate-900/50'} ${index === myPlayerId ? 'outline outline-2 outline-blue-400' : ''}` }, 
+                       return React.createElement('td', { key: `total-score-${player.id}`, className: `h-8 sm:h-10 px-1 sm:px-2 text-center text-lg font-mono align-middle transition-colors duration-300 border-r border-slate-600 last:border-r-0 ${index === gameState.currentPlayerIndex && gameState.isGameStarted && !gameState.isGameOver && player.isClaimed ? 'bg-yellow-400/80 text-slate-900' : 'bg-slate-900/50'}` }, 
                          hasHistory ? calculateTotalScore(player) : ''
                        );
                      }))
