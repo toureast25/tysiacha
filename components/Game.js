@@ -210,7 +210,8 @@ const Game = ({ roomCode, playerName, onExit }) => {
                            // If I was in the game but am no longer, I was kicked or left. Exit to lobby.
                            // Unless I am just waiting for approval.
                            const isStillWaiting = finalState.joinRequests?.some(r => r.sessionId === mySessionIdRef.current);
-                           if (!isStillWaiting) {
+                           // FIX: Do not exit if the state that removed me was sent BY ME. This prevents a race condition on join/reconnect.
+                           if (!isStillWaiting && receivedState.senderId !== mySessionIdRef.current) {
                                onExit();
                            }
                         }
