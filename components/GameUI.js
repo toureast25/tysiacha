@@ -117,7 +117,7 @@ const GameUI = (props) => {
                   )
                 )
               ),
-              React.createElement('div', { className: "flex-grow overflow-y-auto relative" },
+              React.createElement('div', { className: "flex-grow overflow-auto relative" },
                 React.createElement('table', { className: "w-full table-fixed text-sm text-left text-gray-300 border-collapse" },
                   React.createElement('thead', { className: "text-xs text-yellow-300 uppercase bg-slate-800 sticky top-0 z-10" },
                     React.createElement('tr', null, 
