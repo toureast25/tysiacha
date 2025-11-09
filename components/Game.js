@@ -259,59 +259,38 @@ const Game = ({ roomCode, playerName, onExit }) => {
         let needsUpdate = false;
         const activePlayersCountBeforeUpdate = localGameState.players.filter(p => p.isClaimed && !p.isSpectator).length;
 
-        const newPlayers = localGameState.players.map(p => {
-            const playerCopy = {...p};
-            if (!playerCopy.isClaimed || playerCopy.isSpectator) {
-                return playerCopy;
-            }
-            
-            const lastSeen = lastSeenTimestampsRef.current[playerCopy.id] || 0;
-            
+        // --- Принудительное обновление статусов ---
+        let updatedPlayers = updateAllPlayerStatuses(localGameState.players, lastSeenTimestampsRef.current);
+
+        const anyStatusChanged = updatedPlayers.some((p, i) => p.status !== localGameState.players[i].status);
+        if (anyStatusChanged) {
+            needsUpdate = true;
+        }
+
+        // --- Проверка на удаление неактивных игроков ---
+        updatedPlayers = updatedPlayers.map(p => {
+             const lastSeen = lastSeenTimestampsRef.current[p.id] || 0;
             // Timeout check (10 minutes) - only remove if we've seen them before
-            if (now - lastSeen > 600000 && playerCopy.isClaimed && lastSeen > 0) {
-                // If player is still marked as claimed, mark them as having left.
+            if (now - lastSeen > 600000 && p.isClaimed && lastSeen > 0) {
                 needsUpdate = true;
-                return { ...playerCopy, isClaimed: false, status: 'offline' };
+                return { ...p, isClaimed: false, status: 'offline' };
             }
-
-            // Status update check
-            let newStatus = playerCopy.status;
-            
-            if (lastSeen > 0) {
-                if (now - lastSeen > 60000) { // 1 min
-                    newStatus = 'disconnected';
-                } else if (now - lastSeen > 10000) { // 10 sec
-                    newStatus = 'away';
-                } else {
-                    newStatus = 'online';
-                }
-            } else if (playerCopy.status !== 'offline') {
-                // If we've never seen them but their status is not 'offline', correct it.
-                // This acts as a backup for the initial status cleanup.
-                newStatus = 'offline';
-            }
-
-
-            if (newStatus !== playerCopy.status) {
-                needsUpdate = true;
-                playerCopy.status = newStatus;
-            }
-            return playerCopy;
+            return p;
         });
 
         if (needsUpdate) {
-            let newState = { ...localGameState, players: newPlayers };
+            let newState = { ...localGameState, players: updatedPlayers };
             
             let newHostId = localGameState.hostId;
-            const currentHost = localGameState.hostId !== null ? newPlayers.find(p => p.id === localGameState.hostId) : null;
+            const currentHost = localGameState.hostId !== null ? updatedPlayers.find(p => p.id === localGameState.hostId) : null;
     
             // Re-evaluate host if: there is no host, the current host is gone, or the current host is not 'online'.
             if (localGameState.hostId === null || !currentHost || !currentHost.isClaimed || currentHost.isSpectator || currentHost.status !== 'online') {
-                newHostId = findNextHost(newPlayers);
+                newHostId = findNextHost(updatedPlayers);
             }
             newState.hostId = newHostId;
             
-            const remainingPlayersAfterUpdate = newPlayers.filter(p => p.isClaimed && !p.isSpectator);
+            const remainingPlayersAfterUpdate = updatedPlayers.filter(p => p.isClaimed && !p.isSpectator);
             
             if (remainingPlayersAfterUpdate.length === 1 && activePlayersCountBeforeUpdate > 1 && !localGameState.isGameOver) {
                  publishState({
@@ -339,8 +318,19 @@ const Game = ({ roomCode, playerName, onExit }) => {
 
 
   // --- Game Logic Actions ---
-  const handleStartOfficialGame = () => {
-    const state = gameState;
+   const performGameAction = (action) => {
+    const currentState = gameStateRef.current;
+    if (!currentState) return;
+
+    // Принудительно обновляем статусы всех игроков перед любым действием
+    const playersWithFreshStatuses = updateAllPlayerStatuses(currentState.players, lastSeenTimestampsRef.current);
+    const updatedState = { ...currentState, players: playersWithFreshStatuses };
+    
+    // Выполняем запрошенное действие с уже обновленным состоянием
+    action(updatedState);
+  };
+
+  const handleStartOfficialGame = () => performGameAction((state) => {
     if (myPlayerId !== state.hostId || state.isGameStarted) return;
 
     const claimedPlayerCount = state.players.filter(p => p.isClaimed && !p.isSpectator).length;
@@ -349,8 +339,7 @@ const Game = ({ roomCode, playerName, onExit }) => {
         return;
     }
     
-    const playersWithFreshStatuses = updateAllPlayerStatuses(state.players, lastSeenTimestampsRef.current);
-    const firstPlayer = playersWithFreshStatuses[state.currentPlayerIndex];
+    const firstPlayer = state.players[state.currentPlayerIndex];
     let gameMessage = `Игра началась! Ход ${firstPlayer.name}.`;
     if (!firstPlayer.hasEnteredGame) {
         gameMessage += ` Ему нужно 50+ для входа.`;
@@ -358,16 +347,14 @@ const Game = ({ roomCode, playerName, onExit }) => {
 
     publishState({
         ...state,
-        players: playersWithFreshStatuses,
         isGameStarted: true,
         canRoll: true,
         gameMessage: gameMessage,
         turnStartTime: Date.now(),
     });
-  };
+  });
 
-  const handleRollDice = () => {
-    const state = gameState;
+  const handleRollDice = () => performGameAction((state) => {
     if (!state.canRoll || state.isGameOver || !state.isGameStarted) return;
 
     const isHotDiceRoll = state.keptDiceThisTurn.length >= 5;
@@ -398,7 +385,7 @@ const Game = ({ roomCode, playerName, onExit }) => {
           }
           updatedPlayer.scores.push(penalty);
           updatedPlayer.barrelBolts = 0; // Reset after penalty
-          updatedPlayer.justResetFromBarrel = true; // Установка флага иммунитета
+          updatedPlayer.justResetFromBarrel = true; 
         }
       }
       
@@ -406,16 +393,15 @@ const Game = ({ roomCode, playerName, onExit }) => {
         index === state.currentPlayerIndex ? updatedPlayer : player
       );
       
-      const playersWithFreshStatuses = updateAllPlayerStatuses(newPlayers, lastSeenTimestampsRef.current);
-      const nextPlayerIndex = findNextActivePlayer(state.currentPlayerIndex, playersWithFreshStatuses);
-      const nextPlayer = playersWithFreshStatuses[nextPlayerIndex];
+      const nextPlayerIndex = findNextActivePlayer(state.currentPlayerIndex, newPlayers);
+      const nextPlayer = newPlayers[nextPlayerIndex];
 
       let gameMessage = `${state.players[state.currentPlayerIndex].name} получает болт! Ход ${nextPlayer.name}.`;
       if (!nextPlayer.hasEnteredGame) {
         gameMessage += ` Ему нужно 50+ для входа.`;
       }
       
-      const finalPlayersForNextTurn = playersWithFreshStatuses.map(p => ({ ...p, justResetFromBarrel: false }));
+      const finalPlayersForNextTurn = newPlayers.map(p => ({ ...p, justResetFromBarrel: false }));
 
       const boltState = {
         ...createInitialState(),
@@ -423,7 +409,7 @@ const Game = ({ roomCode, playerName, onExit }) => {
         spectators: state.spectators,
         leavers: state.leavers,
         hostId: state.hostId,
-        isGameStarted: true, // Keep game started
+        isGameStarted: true, 
         currentPlayerIndex: nextPlayerIndex,
         diceOnBoard: newDice,
         gameMessage: gameMessage,
@@ -448,7 +434,7 @@ const Game = ({ roomCode, playerName, onExit }) => {
       potentialScore: 0,
     };
     publishState(newState, true);
-  };
+  });
   
   const handleToggleDieSelection = (index) => {
     if (gameState.isGameOver || gameState.diceOnBoard.length === 0) return;
@@ -484,8 +470,7 @@ const Game = ({ roomCode, playerName, onExit }) => {
     publishState(newState, true);
   };
 
-  const handleKeepDice = (indices) => {
-    const state = gameState;
+  const handleKeepDice = (indices) => performGameAction((state) => {
     if (state.isGameOver) return;
 
     const newlySelectedValues = indices.map(i => state.diceOnBoard[i]);
@@ -535,10 +520,9 @@ const Game = ({ roomCode, playerName, onExit }) => {
         };
     }
     publishState(newState, true);
-  };
+  });
   
-  const handleBankScore = () => {
-    const state = gameState;
+  const handleBankScore = () => performGameAction((state) => {
     if (!state.canBank || state.isGameOver) return;
     
     let finalTurnScore = state.currentTurnScore + state.potentialScore;
@@ -571,34 +555,31 @@ const Game = ({ roomCode, playerName, onExit }) => {
           }
           updatedPlayer.scores.push(penalty);
           updatedPlayer.barrelBolts = 0; // Reset
-          updatedPlayer.justResetFromBarrel = true; // Установка флага иммунитета
+          updatedPlayer.justResetFromBarrel = true; 
         }
       }
       const newPlayersWithBolt = state.players.map((p, i) => i === state.currentPlayerIndex ? updatedPlayer : p);
-      const playersWithFreshStatuses = updateAllPlayerStatuses(newPlayersWithBolt, lastSeenTimestampsRef.current);
-      const nextIdx = findNextActivePlayer(state.currentPlayerIndex, playersWithFreshStatuses);
-      const nextPlayer = playersWithFreshStatuses[nextIdx];
+      const nextIdx = findNextActivePlayer(state.currentPlayerIndex, newPlayersWithBolt);
+      const nextPlayer = newPlayersWithBolt[nextIdx];
       let msg = `${currentPlayer.name} получает болт. Ход ${nextPlayer.name}.`;
       if (!nextPlayer.hasEnteredGame) msg += ` Ему нужно 50+ для входа.`;
       
-      const finalPlayersForNextTurn = playersWithFreshStatuses.map(p => ({ ...p, justResetFromBarrel: false }));
+      const finalPlayersForNextTurn = newPlayersWithBolt.map(p => ({ ...p, justResetFromBarrel: false }));
 
       const boltState = { ...createInitialState(), players: finalPlayersForNextTurn, spectators: state.spectators, leavers: state.leavers, hostId: state.hostId, isGameStarted: true, canRoll: true, currentPlayerIndex: nextIdx, gameMessage: msg, turnStartTime: Date.now() };
       publishState(boltState, true);
       return;
     }
 
-    // "Старт" - проверка входа в игру
     if (!currentPlayer.hasEnteredGame && finalTurnScore < 50) {
-        const playersWithFreshStatuses = updateAllPlayerStatuses(state.players, lastSeenTimestampsRef.current);
-        const nextPlayerIndex = findNextActivePlayer(state.currentPlayerIndex, playersWithFreshStatuses);
-        const nextPlayer = playersWithFreshStatuses[nextPlayerIndex];
+        const nextPlayerIndex = findNextActivePlayer(state.currentPlayerIndex, state.players);
+        const nextPlayer = state.players[nextPlayerIndex];
         let msg = `${currentPlayer.name} не набрал(а) 50 очков для входа. Ход ${nextPlayer.name}.`;
         if (!nextPlayer.hasEnteredGame) msg += ` Ему нужно 50+ для входа.`;
 
         const failEntryState = { 
             ...createInitialState(), 
-            players: playersWithFreshStatuses, 
+            players: state.players, 
             spectators: state.spectators, 
             leavers: state.leavers, 
             hostId: state.hostId, 
@@ -612,7 +593,6 @@ const Game = ({ roomCode, playerName, onExit }) => {
         return;
     }
     
-    // "Бочки" - Barrel logic
     const totalScoreBeforeTurn = calculateTotalScore(currentPlayer);
     const barrelStatus = getPlayerBarrelStatus(currentPlayer);
     let turnFailedBarrel = false;
@@ -642,14 +622,12 @@ const Game = ({ roomCode, playerName, onExit }) => {
             }
             updatedPlayer.scores.push(penalty);
             updatedPlayer.barrelBolts = 0; // Reset
-            updatedPlayer.justResetFromBarrel = true; // Установка флага иммунитета
+            updatedPlayer.justResetFromBarrel = true; 
         }
 
         const newPlayersWithBarrelBolt = state.players.map((p, i) => i === state.currentPlayerIndex ? updatedPlayer : p);
-        const playersWithFreshStatuses = updateAllPlayerStatuses(newPlayersWithBarrelBolt, lastSeenTimestampsRef.current);
-
-        const nextPlayerIndex = findNextActivePlayer(state.currentPlayerIndex, playersWithFreshStatuses);
-        const nextPlayer = playersWithFreshStatuses[nextPlayerIndex];
+        const nextPlayerIndex = findNextActivePlayer(state.currentPlayerIndex, newPlayersWithBarrelBolt);
+        const nextPlayer = newPlayersWithBarrelBolt[nextPlayerIndex];
         let msg = `${currentPlayer.name} не смог(ла) сойти с бочки. Очки сгорели. Ход ${nextPlayer.name}.`;
         
         const nextPlayerStatus = getPlayerBarrelStatus(nextPlayer);
@@ -659,7 +637,7 @@ const Game = ({ roomCode, playerName, onExit }) => {
             msg += ` Он(а) на бочке ${nextPlayerStatus}.`;
         }
         
-        const finalPlayersForNextTurn = playersWithFreshStatuses.map(p => ({ ...p, justResetFromBarrel: false }));
+        const finalPlayersForNextTurn = newPlayersWithBarrelBolt.map(p => ({ ...p, justResetFromBarrel: false }));
 
         const failBarrelState = { 
             ...createInitialState(), 
@@ -677,9 +655,6 @@ const Game = ({ roomCode, playerName, onExit }) => {
         return;
     }
 
-    // --- Основная логика записи очков и штрафов ---
-    
-    // 1. Обновляем очки текущего игрока и сбрасываем счетчик болтов на бочке
     let playersAfterTurn = state.players.map((p, i) => {
         if (i === state.currentPlayerIndex) {
             return { ...p, scores: [...p.scores, finalTurnScore], hasEnteredGame: true, barrelBolts: 0 };
@@ -690,7 +665,6 @@ const Game = ({ roomCode, playerName, onExit }) => {
     const currentPlayerNewTotal = calculateTotalScore(playersAfterTurn[state.currentPlayerIndex]);
     let penaltyMessages = [];
 
-    // 2. Рассчитываем и применяем все штрафы
     const newBarrelStatus = 
         (currentPlayerNewTotal >= 200 && currentPlayerNewTotal < 300) ? '200-300' :
         (currentPlayerNewTotal >= 700 && currentPlayerNewTotal < 800) ? '700-800' : null;
@@ -703,32 +677,19 @@ const Game = ({ roomCode, playerName, onExit }) => {
         const originalPlayerState = state.players[i];
         const otherPlayerOldTotal = calculateTotalScore(originalPlayerState);
         const penaltiesToAdd = [];
-        let wasKnockedOffBarrel = false;
-
-        // Штраф за столкновение на бочке
-        if (newBarrelStatus) {
-            const otherPlayerBarrelStatus = getPlayerBarrelStatus(originalPlayerState);
-            if (otherPlayerBarrelStatus === newBarrelStatus) {
-                penaltyMessages.push(`${p.name} сбит с бочки.`);
-                let penaltyAmount = 0;
-                if (newBarrelStatus === '200-300') {
-                    penaltyAmount = 150 - otherPlayerOldTotal;
-                } else { // 700-800
-                    penaltyAmount = 650 - otherPlayerOldTotal;
-                }
-                penaltiesToAdd.push(penaltyAmount);
-                wasKnockedOffBarrel = true;
-            }
-        }
+        const otherPlayerBarrelStatus = getPlayerBarrelStatus(originalPlayerState);
         
-        // Штраф за обгон
-        if (!wasKnockedOffBarrel && totalScoreBeforeTurn < otherPlayerOldTotal && currentPlayerNewTotal >= otherPlayerOldTotal && otherPlayerOldTotal >= 100) {
+        // ПРИОРИТЕТ 1: Столкновение на бочке
+        if (newBarrelStatus && otherPlayerBarrelStatus === newBarrelStatus) {
+            penaltyMessages.push(`${p.name} сбит с бочки.`);
+            let penaltyAmount = (newBarrelStatus === '200-300') ? 150 - otherPlayerOldTotal : 650 - otherPlayerOldTotal;
+            penaltiesToAdd.push(penaltyAmount);
+        }
+        // ПРИОРИТЕТ 2: Обгон (только если не было столкновения)
+        else if (totalScoreBeforeTurn < otherPlayerOldTotal && currentPlayerNewTotal >= otherPlayerOldTotal && otherPlayerOldTotal >= 100) {
             const scoreAfterPenalty = otherPlayerOldTotal - 50;
-            const wouldLandOnBarrel = 
-                (scoreAfterPenalty >= 200 && scoreAfterPenalty < 300) ||
-                (scoreAfterPenalty >= 700 && scoreAfterPenalty < 800);
+            const wouldLandOnBarrel = (scoreAfterPenalty >= 200 && scoreAfterPenalty < 300) || (scoreAfterPenalty >= 700 && scoreAfterPenalty < 800);
             
-            // Проверяем флаг иммунитета у игрока, которого обгоняют
             if (!wouldLandOnBarrel && !p.justResetFromBarrel) {
                 penaltyMessages.push(`${p.name} получает штраф -50.`);
                 penaltiesToAdd.push(-50);
@@ -738,31 +699,26 @@ const Game = ({ roomCode, playerName, onExit }) => {
         }
         
         if (penaltiesToAdd.length > 0) {
-            const uniquePenalties = [...new Set(penaltiesToAdd)];
-            return { ...p, scores: [...p.scores, ...uniquePenalties] };
+            return { ...p, scores: [...p.scores, ...penaltiesToAdd] };
         }
         
         return p;
     });
 
-    // 3. Проверяем на победу с учетом всех изменений
     const finalWinnerScore = calculateTotalScore(playersWithPenalties[state.currentPlayerIndex]);
     if (finalWinnerScore >= 1000) {
       let winMessage = `${currentPlayer.name} победил, набрав ${finalWinnerScore} очков!`;
       if (penaltyMessages.length > 0) {
         winMessage += " " + penaltyMessages.join(" ");
       }
-      const playersWithFreshStatuses = updateAllPlayerStatuses(playersWithPenalties, lastSeenTimestampsRef.current);
-      const finalPlayersForNextTurn = playersWithFreshStatuses.map(p => ({ ...p, justResetFromBarrel: false }));
+      const finalPlayersForNextTurn = playersWithPenalties.map(p => ({ ...p, justResetFromBarrel: false }));
       const winState = { ...createInitialState(), players: finalPlayersForNextTurn, spectators: state.spectators, leavers: state.leavers, hostId: state.hostId, isGameOver: true, gameMessage: winMessage };
       publishState(winState, true);
       return;
     }
 
-    // 4. Готовим следующий ход
-    const playersWithFreshStatuses = updateAllPlayerStatuses(playersWithPenalties, lastSeenTimestampsRef.current);
-    const nextPlayerIndex = findNextActivePlayer(state.currentPlayerIndex, playersWithFreshStatuses);
-    const nextPlayer = playersWithFreshStatuses[nextPlayerIndex];
+    const nextPlayerIndex = findNextActivePlayer(state.currentPlayerIndex, playersWithPenalties);
+    const nextPlayer = playersWithPenalties[nextPlayerIndex];
 
     let bankMessage = !currentPlayer.hasEnteredGame
         ? `${currentPlayer.name} вошёл в игру, записав ${finalTurnScore}! Ход ${nextPlayer.name}.`
@@ -779,33 +735,31 @@ const Game = ({ roomCode, playerName, onExit }) => {
         bankMessage += ` Он(а) на бочке ${nextPlayerBarrelStatus}.`;
     }
 
-    const finalPlayersForNextTurn = playersWithFreshStatuses.map(p => ({ ...p, justResetFromBarrel: false }));
+    const finalPlayersForNextTurn = playersWithPenalties.map(p => ({ ...p, justResetFromBarrel: false }));
     const bankState = { ...createInitialState(), players: finalPlayersForNextTurn, spectators: state.spectators, leavers: state.leavers, hostId: state.hostId, isGameStarted: true, canRoll: true, currentPlayerIndex: nextPlayerIndex, gameMessage: bankMessage, turnStartTime: Date.now() };
     publishState(bankState, true);
-  };
+  });
 
-  const handleSkipTurn = () => {
-    const state = gameState;
+  const handleSkipTurn = () => performGameAction((state) => {
     if(state.isGameOver || myPlayerId === state.currentPlayerIndex) return;
     
     const currentPlayer = state.players[state.currentPlayerIndex];
     if(currentPlayer.status === 'online') return;
 
     const newPlayers = state.players.map((p, i) => i === state.currentPlayerIndex ? { ...p, scores: [...p.scores, '/'] } : p);
-    const playersWithFreshStatuses = updateAllPlayerStatuses(newPlayers, lastSeenTimestampsRef.current);
-    const nextIdx = findNextActivePlayer(state.currentPlayerIndex, playersWithFreshStatuses);
-    const nextPlayer = playersWithFreshStatuses[nextIdx];
+    const nextIdx = findNextActivePlayer(state.currentPlayerIndex, newPlayers);
+    const nextPlayer = newPlayers[nextIdx];
     let msg = `${currentPlayer.name} пропустил ход. Ход ${nextPlayer.name}.`;
     if(!nextPlayer.hasEnteredGame) msg += ` Ему нужно 50+ для входа.`;
     
-    const finalPlayersForNextTurn = playersWithFreshStatuses.map(p => ({ ...p, justResetFromBarrel: false }));
+    const finalPlayersForNextTurn = newPlayers.map(p => ({ ...p, justResetFromBarrel: false }));
 
     publishState({ ...createInitialState(), players: finalPlayersForNextTurn, spectators: state.spectators, leavers: state.leavers, hostId: state.hostId, isGameStarted: true, canRoll: true, currentPlayerIndex: nextIdx, gameMessage: msg, turnStartTime: Date.now() });
-  }
+  });
 
-  const handleNewGame = () => {
-      if (myPlayerId !== gameState.hostId) return;
-      const oldState = gameState;
+  const handleNewGame = () => performGameAction((state) => {
+      if (myPlayerId !== state.hostId) return;
+      const oldState = state;
       const newPlayers = Array.from({ length: 5 }, (_, index) => {
           const oldPlayer = oldState.players.find(p => p && p.id === index);
 
@@ -832,9 +786,8 @@ const Game = ({ roomCode, playerName, onExit }) => {
           };
       });
 
-      const playersWithFreshStatuses = updateAllPlayerStatuses(newPlayers, lastSeenTimestampsRef.current);
-      const hostPlayer = playersWithFreshStatuses.find(p => p.id === oldState.hostId);
-      const claimedPlayerCount = playersWithFreshStatuses.filter(p => p.isClaimed && !p.isSpectator).length;
+      const hostPlayer = newPlayers.find(p => p.id === oldState.hostId);
+      const claimedPlayerCount = newPlayers.filter(p => p.isClaimed && !p.isSpectator).length;
       
       let gameMessage;
       if (claimedPlayerCount < 2) {
@@ -845,7 +798,7 @@ const Game = ({ roomCode, playerName, onExit }) => {
 
       const finalState = {
           ...createInitialState(), 
-          players: playersWithFreshStatuses, 
+          players: newPlayers, 
           spectators: oldState.spectators, 
           hostId: oldState.hostId,
           currentPlayerIndex: oldState.hostId,
@@ -854,7 +807,7 @@ const Game = ({ roomCode, playerName, onExit }) => {
       };
       
       publishState(finalState);
-  };
+  });
 
   const handleJoinRequest = React.useCallback((requestSessionId, accepted) => {
     const state = gameStateRef.current;
@@ -884,8 +837,7 @@ const Game = ({ roomCode, playerName, onExit }) => {
                 ? { ...p, name: request.name, isClaimed: true, scores: initialScores, status: 'online', isSpectator: false, sessionId: request.sessionId, hasEnteredGame: restoredScore > 0, barrelBolts: 0, justResetFromBarrel: false } // Восстанавливаем статус входа
                 : p
             );
-            const playersWithFreshStatuses = updateAllPlayerStatuses(newPlayers, lastSeenTimestampsRef.current);
-            newState = { ...newState, players: playersWithFreshStatuses, leavers: newLeavers, gameMessage: `${request.name} присоединился к игре.` };
+            newState = { ...newState, players: newPlayers, leavers: newLeavers, gameMessage: `${request.name} присоединился к игре.` };
         } else {
             const newSpectator = { name: request.name, id: request.sessionId };
             newState = { ...newState, spectators: [...newState.spectators, newSpectator], gameMessage: `Для ${request.name} не нашлось места, он стал зрителем.` };
@@ -894,7 +846,7 @@ const Game = ({ roomCode, playerName, onExit }) => {
         const newSpectator = { name: request.name, id: request.sessionId };
         newState = { ...newState, spectators: [...(newState.spectators || []), newSpectator], gameMessage: `Хост отклонил запрос ${request.name} на присоединение.` };
     }
-    publishState(newState);
+    performGameAction(() => publishState(newState));
   }, [myPlayerId, publishState, updateAllPlayerStatuses]);
 
   React.useEffect(() => {
@@ -922,8 +874,7 @@ const Game = ({ roomCode, playerName, onExit }) => {
     if (availableSlots === 0) {
       if (window.confirm("Нет свободных мест. Хотите присоединиться в качестве зрителя?")) {
         const newSpectator = { name: playerName, id: mySessionIdRef.current };
-        const playersWithFreshStatuses = updateAllPlayerStatuses(state.players, lastSeenTimestampsRef.current);
-        publishState({ ...state, players: playersWithFreshStatuses, spectators: [...state.spectators, newSpectator] });
+        performGameAction((s) => publishState({ ...s, spectators: [...s.spectators, newSpectator] }));
         setIsSpectator(true);
       }
       return;
@@ -937,14 +888,12 @@ const Game = ({ roomCode, playerName, onExit }) => {
             sessionId: mySessionIdRef.current,
             timestamp: Date.now()
         };
-        const playersWithFreshStatuses = updateAllPlayerStatuses(state.players, lastSeenTimestampsRef.current);
         const newState = {
             ...state,
-            players: playersWithFreshStatuses,
             joinRequests: [...(state.joinRequests || []), newRequest],
             gameMessage: `${playerName} хочет присоединиться. Ожидание подтверждения от хоста.`
         };
-        publishState(newState, true);
+        performGameAction(() => publishState(newState, true));
     } else {
         const lastClaimedIndex = state.players.map(p => p.isClaimed).lastIndexOf(true);
         let joinIndex = state.players.findIndex((p, i) => !p.isClaimed && i > lastClaimedIndex);
@@ -968,14 +917,12 @@ const Game = ({ roomCode, playerName, onExit }) => {
             return p;
         });
 
-        const playersWithFreshStatuses = updateAllPlayerStatuses(newPlayers, lastSeenTimestampsRef.current);
-
         let newHostId = state.hostId;
-        if (state.hostId === null || !playersWithFreshStatuses.some(p => p.id === state.hostId && p.isClaimed)) {
-            newHostId = findNextHost(playersWithFreshStatuses) ?? joinIndex;
+        if (state.hostId === null || !newPlayers.some(p => p.id === state.hostId && p.isClaimed)) {
+            newHostId = findNextHost(newPlayers) ?? joinIndex;
         }
 
-        const claimedPlayerCount = playersWithFreshStatuses.filter(p => p.isClaimed && !p.isSpectator).length;
+        const claimedPlayerCount = newPlayers.filter(p => p.isClaimed && !p.isSpectator).length;
 
         let gameMessage = state.gameMessage;
 
@@ -985,10 +932,11 @@ const Game = ({ roomCode, playerName, onExit }) => {
             gameMessage = `Готовы к игре! Хост может начинать.`;
         } else {
             const scoreMessage = restoredScore > 0 ? ` (восстановлено ${restoredScore} очков)` : '';
-            gameMessage = `${playerName} присоединился${scoreMessage}. Ход ${playersWithFreshStatuses[state.currentPlayerIndex].name}.`;
+            gameMessage = `${playerName} присоединился${scoreMessage}. Ход ${newPlayers[state.currentPlayerIndex].name}.`;
         }
-
-        publishState({ ...state, players: playersWithFreshStatuses, leavers: newLeavers, gameMessage, hostId: newHostId }, true);
+        
+        const finalState = { ...state, players: newPlayers, leavers: newLeavers, gameMessage, hostId: newHostId };
+        performGameAction(() => publishState(finalState, true));
     }
   };
   
@@ -1030,8 +978,7 @@ const Game = ({ roomCode, playerName, onExit }) => {
     }
 
     // 4. Find new host
-    const playersWithFreshStatuses = updateAllPlayerStatuses(newPlayers, lastSeenTimestampsRef.current);
-    const newHostId = findNextHost(playersWithFreshStatuses);
+    const newHostId = findNextHost(newPlayers);
     
     // 5. Determine next current player
     let newCurrentPlayerIndex = 0;
@@ -1040,16 +987,16 @@ const Game = ({ roomCode, playerName, onExit }) => {
     
     if (gameWasInProgress) {
         if (oldCurrentPlayer.id === playerIdToRemove) { // It was the removed player's turn
-            newCurrentPlayerIndex = findNextActivePlayer(-1, playersWithFreshStatuses); 
+            newCurrentPlayerIndex = findNextActivePlayer(-1, newPlayers); 
         } else {
-            const currentPlayerInNewList = playersWithFreshStatuses.find(p => p.sessionId === oldCurrentPlayer.sessionId);
-            newCurrentPlayerIndex = currentPlayerInNewList ? currentPlayerInNewList.id : findNextActivePlayer(-1, playersWithFreshStatuses);
+            const currentPlayerInNewList = newPlayers.find(p => p.sessionId === oldCurrentPlayer.sessionId);
+            newCurrentPlayerIndex = currentPlayerInNewList ? currentPlayerInNewList.id : findNextActivePlayer(-1, newPlayers);
         }
     } else {
         newCurrentPlayerIndex = newHostId !== null ? newHostId : 0;
     }
 
-    const remainingActivePlayers = playersWithFreshStatuses.filter(p => p.isClaimed && !p.isSpectator);
+    const remainingActivePlayers = newPlayers.filter(p => p.isClaimed && !p.isSpectator);
     const activePlayersBeforeRemoval = state.players.filter(p => p.isClaimed && !p.isSpectator).length;
     
     let finalState;
@@ -1057,7 +1004,7 @@ const Game = ({ roomCode, playerName, onExit }) => {
     if (gameWasInProgress && remainingActivePlayers.length < 2 && activePlayersBeforeRemoval >= 2) {
         finalState = {
             ...state,
-            players: playersWithFreshStatuses,
+            players: newPlayers,
             hostId: newHostId,
             leavers: newLeavers,
             isGameOver: true,
@@ -1066,7 +1013,7 @@ const Game = ({ roomCode, playerName, onExit }) => {
               : 'Все игроки вышли. Игра окончена.',
         };
     } else {
-        const nextPlayer = playersWithFreshStatuses[newCurrentPlayerIndex];
+        const nextPlayer = newPlayers[newCurrentPlayerIndex];
         const nextPlayerName = nextPlayer ? nextPlayer.name : '';
         
         let message = wasKicked
@@ -1079,7 +1026,7 @@ const Game = ({ roomCode, playerName, onExit }) => {
 
         finalState = {
           ...state,
-          players: playersWithFreshStatuses,
+          players: newPlayers,
           hostId: newHostId,
           leavers: newLeavers,
           currentPlayerIndex: newCurrentPlayerIndex,
@@ -1106,7 +1053,7 @@ const Game = ({ roomCode, playerName, onExit }) => {
         }
     }
     
-    publishState(finalState);
+    performGameAction(() => publishState(finalState));
   };
 
   const handleLeaveGame = () => {
@@ -1252,7 +1199,7 @@ const Game = ({ roomCode, playerName, onExit }) => {
     onJoinRequest: handleJoinRequest,
     onToggleDieSelection: handleToggleDieSelection,
     onDragStart: handleDragStart,
-    onDrop: onDrop,
+    onDrop: handleDrop,
     onDieDoubleClick: handleDieDoubleClick,
     onInitiateKick: handleInitiateKick,
     onConfirmKick: handleConfirmKick,
