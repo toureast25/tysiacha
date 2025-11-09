@@ -118,7 +118,7 @@ const GameUI = (props) => {
                 )
               ),
               React.createElement('div', { className: "flex-grow overflow-y-auto relative" },
-                React.createElement('table', { className: "w-full text-sm text-left text-gray-300 border-collapse" },
+                React.createElement('table', { className: "w-full table-fixed text-sm text-left text-gray-300 border-collapse" },
                   React.createElement('thead', { className: "text-xs text-yellow-300 uppercase bg-slate-800 sticky top-0 z-10" },
                     React.createElement('tr', null, 
                       gameState.players.map(player => {
@@ -143,11 +143,11 @@ const GameUI = (props) => {
                                   React.createElement('span', { className: "text-xs italic" }, '(вышел)')
                                 )
                               : React.createElement('div', { className: "flex flex-col items-center justify-center h-full py-2" },
-                                  React.createElement('div', { className: "flex items-center justify-center" },
-                                    isHostPlayer && React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "h-4 w-4 mr-1 text-yellow-400", viewBox: "0 0 24 24", fill: "currentColor" },
+                                  React.createElement('div', { className: "w-full flex items-center justify-center px-1" },
+                                    isHostPlayer && React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "h-4 w-4 mr-1 text-yellow-400 flex-shrink-0", viewBox: "0 0 24 24", fill: "currentColor" },
                                       React.createElement('path', { d: "M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5z" })
                                     ),
-                                    React.createElement('span', { className: "px-1" }, player.name)
+                                    React.createElement('span', { className: "truncate", title: player.name }, player.name)
                                   ),
                                   !player.hasEnteredGame && gameState.isGameStarted && React.createElement('span', { className: "text-xs font-normal text-cyan-300 italic", title: "Нужно набрать 50+ очков для входа" }, '(на старте)'),
                                   barrelStatus && React.createElement('span', { className: "text-xs font-normal text-orange-400 italic", title: `Нужно набрать очков, чтобы стало ${barrelStatus === '200-300' ? '300+' : '800+'}` }, '(на бочке)'),
@@ -262,7 +262,7 @@ const GameUI = (props) => {
                               ? React.createElement('button', { onClick: onStartOfficialGame, disabled: claimedPlayerCount < 2, className: "w-full py-5 sm:py-4 bg-blue-600 hover:bg-blue-700 rounded-lg text-2xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed disabled:scale-100" }, 'Начать игру')
                               : React.createElement('div', { className: "text-center text-lg text-gray-400" }, 'Ожидание начала игры от хоста...')
                             )
-                          : React.createElement('div', { className: "grid grid-cols-2 gap-2 sm:gap-4" },
+                          : React.createElement('div', { className: "grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-4" },
                               React.createElement('button', { onClick: onRollDice, disabled: !isMyTurn || !gameState.canRoll, className: "w-full py-2 sm:py-3 bg-green-600 hover:bg-green-700 rounded-lg text-xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed disabled:scale-100" }, rollButtonText),
                               React.createElement('button', { onClick: onBankScore, disabled: !isMyTurn || !gameState.canBank, className: "w-full py-2 sm:py-3 bg-yellow-500 hover:bg-yellow-600 text-slate-900 rounded-lg text-xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed disabled:scale-100" }, 'Записать')
                             )
