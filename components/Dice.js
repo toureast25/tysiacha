@@ -1,4 +1,3 @@
-
 // 
 import React from 'react';
 
@@ -22,7 +21,9 @@ export const DiceIcon = ({ value, isSelected, onClick, onDragStart, onDoubleClic
       'mid-right': 'top-1/2 right-1/4 translate-x-1/2 -translate-y-1/2',
   }
   
-  const baseClasses = "w-14 sm:w-16 lg:w-20 aspect-square bg-slate-200 rounded-lg shadow-md flex items-center justify-center relative border-2 transition-all duration-200 flex-shrink-0";
+  // --- РАЗМЕР КУБИКОВ ---
+  // Классы w-[4.25rem] (для мобильных) и lg:w-20 (для десктопов) определяют размер костей.
+  const baseClasses = "w-[4.5rem] lg:w-20 aspect-square bg-slate-200 rounded-lg shadow-md flex items-center justify-center relative border-2 transition-all duration-200 flex-shrink-0";
   
   let stateClasses = "border-slate-400";
   if (onClick) {

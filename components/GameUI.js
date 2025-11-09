@@ -222,7 +222,15 @@ const GameUI = (props) => {
                   )
                 )
               ),
-              React.createElement('div', { className: "flex-grow w-full flex flex-col items-center justify-center pt-2 pb-4 sm:pt-3 sm:pb-6 px-4" },
+              // --- РАССТОЯНИЕ МЕЖДУ КУБИКАМИ И ОЧКАМИ ---
+              // Вертикальные отступы этого контейнера (классы pt-*, pb-*)
+              // определяют пространство СВЕРХУ и СНИЗУ от игровых костей.
+              // Класс `pb-4` (padding-bottom: 1rem) и `sm:pb-6` (1.5rem для экранов sm и больше)
+              // создают расстояние до блока "Очки за ход", который находится ниже.
+              React.createElement('div', { className: "flex-grow w-full flex flex-col items-center justify-center pt-2 pb-2 sm:pt-3 sm:pb-6 px-0 sm:px-4" },
+                // --- ОТСТУПЫ МЕЖДУ КУБИКАМИ ---
+                // Класс justify-between распределяет кости по горизонтали, прижимая крайние к границам
+                // и создавая равные отступы только между ними.
                 React.createElement('div', { className: "w-full sm:max-w-[480px] flex items-center justify-between min-h-[72px] sm:min-h-[80px]" },
                   gameState.diceOnBoard.map((value, i) => React.createElement(DiceIcon, { key: `board-${i}`, value: value, isSelected: gameState.selectedDiceIndices.includes(i), onClick: isMyTurn ? () => onToggleDieSelection(i) : null, onDragStart: isMyTurn ? (e) => onDragStart(e, i) : null, onDoubleClick: isMyTurn ? () => onDieDoubleClick(i) : null })),
                   Array.from({ length: 5 - gameState.diceOnBoard.length }).map((_, i) => React.createElement(DiceIcon, { key: `placeholder-${i}`, value: 0 }))
@@ -240,7 +248,7 @@ const GameUI = (props) => {
                       ? React.createElement('button', { 
                           onClick: onJoinGame, 
                           disabled: availableSlotsForJoin === 0, 
-                          className: "w-full py-3 sm:py-4 bg-green-600 hover:bg-green-700 rounded-lg text-2xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed disabled:scale-100" 
+                          className: "w-full py-5 sm:py-4 bg-green-600 hover:bg-green-700 rounded-lg text-2xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed disabled:scale-100" 
                         }, 
                           availableSlotsForJoin > 0 ? `Войти в игру (${availableSlotsForJoin} мест)` : 'Нет свободных мест'
                         )
@@ -251,7 +259,7 @@ const GameUI = (props) => {
                           )
                         : !gameState.isGameStarted 
                           ? (isHost
-                              ? React.createElement('button', { onClick: onStartOfficialGame, disabled: claimedPlayerCount < 2, className: "w-full py-3 sm:py-4 bg-blue-600 hover:bg-blue-700 rounded-lg text-2xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed disabled:scale-100" }, 'Начать игру')
+                              ? React.createElement('button', { onClick: onStartOfficialGame, disabled: claimedPlayerCount < 2, className: "w-full py-5 sm:py-4 bg-blue-600 hover:bg-blue-700 rounded-lg text-2xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed disabled:scale-100" }, 'Начать игру')
                               : React.createElement('div', { className: "text-center text-lg text-gray-400" }, 'Ожидание начала игры от хоста...')
                             )
                           : React.createElement('div', { className: "grid grid-cols-2 gap-2 sm:gap-4" },
