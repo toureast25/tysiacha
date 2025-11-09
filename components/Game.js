@@ -133,9 +133,23 @@ const Game = ({ roomCode, playerName, onExit }) => {
                         return currentState; // Old or same version, ignore.
                     }
 
+                    const finalState = { ...receivedState };
+
+                    // --- NEW: Clean up statuses on first load to verify "real online" ---
+                    if (currentState === null) {
+                        const mySessionId = mySessionIdRef.current;
+                        finalState.players = finalState.players.map(p => {
+                            if (p.isClaimed && p.sessionId !== mySessionId) {
+                                return { ...p, status: 'offline' };
+                            }
+                            return p;
+                        });
+                        lastSeenTimestampsRef.current = {}; // Force re-validation for everyone
+                    }
+
                     // --- Self-identification ---
-                    const myNewData = receivedState.players.find(p => p.sessionId === mySessionIdRef.current);
-                    const iAmNowASpectator = receivedState.spectators.some(s => s.id === mySessionIdRef.current);
+                    const myNewData = finalState.players.find(p => p.sessionId === mySessionIdRef.current);
+                    const iAmNowASpectator = finalState.spectators.some(s => s.id === mySessionIdRef.current);
                     
                     if(isSpectator && !iAmNowASpectator) {
                         // If I thought I was a spectator, but the new state doesn't have me, it means I was rejected.
@@ -166,13 +180,13 @@ const Game = ({ roomCode, playerName, onExit }) => {
                         if (iWasInTheGameBefore) {
                            // If I was in the game but am no longer, I was kicked or left. Exit to lobby.
                            // Unless I am just waiting for approval.
-                           const isStillWaiting = receivedState.joinRequests?.some(r => r.sessionId === mySessionIdRef.current);
+                           const isStillWaiting = finalState.joinRequests?.some(r => r.sessionId === mySessionIdRef.current);
                            if (!isStillWaiting) {
                                onExit();
                            }
                         }
                     }
-                    return receivedState;
+                    return finalState;
                 });
             } catch (e) { console.error('Error parsing game state:', e); }
         }
@@ -210,8 +224,8 @@ const Game = ({ roomCode, playerName, onExit }) => {
             
             const lastSeen = lastSeenTimestampsRef.current[playerCopy.id] || 0;
             
-            // Timeout check (10 minutes)
-            if (now - lastSeen > 600000 && playerCopy.isClaimed) {
+            // Timeout check (10 minutes) - only remove if we've seen them before
+            if (now - lastSeen > 600000 && playerCopy.isClaimed && lastSeen > 0) {
                 // If player is still marked as claimed, mark them as having left.
                 needsUpdate = true;
                 return { ...playerCopy, isClaimed: false, status: 'offline' };
@@ -219,16 +233,21 @@ const Game = ({ roomCode, playerName, onExit }) => {
 
             // Status update check
             let newStatus = playerCopy.status;
-
-            if (lastSeen === 0 && (playerCopy.status === 'online' || playerCopy.status === 'away')) {
-                // Ничего не делаем, ждем первый heartbeat.
-            } else if (now - lastSeen > 60000) {
-                newStatus = 'disconnected';
-            } else if (now - lastSeen > 10000) {
-                newStatus = 'away';
-            } else if (lastSeen > 0) {
-                newStatus = 'online';
+            
+            if (lastSeen > 0) {
+                if (now - lastSeen > 60000) { // 1 min
+                    newStatus = 'disconnected';
+                } else if (now - lastSeen > 10000) { // 10 sec
+                    newStatus = 'away';
+                } else {
+                    newStatus = 'online';
+                }
+            } else if (playerCopy.status !== 'offline') {
+                // If we've never seen them but their status is not 'offline', correct it.
+                // This acts as a backup for the initial status cleanup.
+                newStatus = 'offline';
             }
+
 
             if (newStatus !== playerCopy.status) {
                 needsUpdate = true;
