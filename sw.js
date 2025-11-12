@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tysiacha-cache-v4';
+const CACHE_NAME = 'tysiacha-cache-v5';
 const urlsToCache = [
   '.', // Кэшируем корневую директорию (эквивалент '/')
   'index.html',
@@ -33,6 +33,14 @@ self.addEventListener('fetch', event => {
     return;
   }
   
+  // --- НОВОЕ ПРАВИЛО ---
+  // Игнорируем запросы к сторонним доменам (CDN), чтобы избежать ошибок CORS.
+  // Service Worker должен кэшировать только ресурсы самого приложения.
+  const requestUrl = new URL(event.request.url);
+  if (requestUrl.origin !== self.location.origin) {
+    return; // Позволяем браузеру выполнить запрос напрямую, минуя Service Worker.
+  }
+
   // Для навигационных запросов (переход по страницам) пробуем сеть, если не вышло - отдаем кэш
   if (event.request.mode === 'navigate') {
     event.respondWith(
