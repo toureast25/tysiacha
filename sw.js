@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tysiacha-cache-v5';
+const CACHE_NAME = 'tysiacha-cache-v6';
 const urlsToCache = [
   '.', // Кэшируем корневую директорию (эквивалент '/')
   'index.html',
@@ -19,6 +19,7 @@ const urlsToCache = [
 ];
 
 self.addEventListener('install', event => {
+  self.skipWaiting(); // Немедленно активируем новый Service Worker
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => {
@@ -33,9 +34,7 @@ self.addEventListener('fetch', event => {
     return;
   }
   
-  // --- НОВОЕ ПРАВИЛО ---
   // Игнорируем запросы к сторонним доменам (CDN), чтобы избежать ошибок CORS.
-  // Service Worker должен кэшировать только ресурсы самого приложения.
   const requestUrl = new URL(event.request.url);
   if (requestUrl.origin !== self.location.origin) {
     return; // Позволяем браузеру выполнить запрос напрямую, минуя Service Worker.
@@ -81,6 +80,6 @@ self.addEventListener('activate', event => {
           }
         })
       );
-    })
+    }).then(() => self.clients.claim()) // Захватываем контроль над открытыми страницами
   );
 });
