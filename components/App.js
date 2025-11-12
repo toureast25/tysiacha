@@ -140,7 +140,7 @@ const App = () => {
     },
     React.createElement(
       'div',
-      { className: "w-full h-full bg-black/70 flex items-center justify-center" },
+      { className: "w-full h-full flex items-center justify-center" },
       renderScreen()
     )
   );
