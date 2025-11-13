@@ -90,8 +90,8 @@ const useMqtt = (roomCode, playerName, mySessionId) => {
       }
     };
 
-    ws.onerror = (err) => {
-      console.error('WebSocket Error:', err);
+    ws.onerror = (event) => {
+      console.error('In-game WebSocket connection error. This is likely a network issue or server problem. Attempting to reconnect...');
       ws.close();
     };
     

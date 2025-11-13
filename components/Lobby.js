@@ -7,6 +7,7 @@ const Lobby = ({ onStartGame, initialRoomCode }) => {
   const [playerName, setPlayerName] = React.useState('');
   const [roomStatus, setRoomStatus] = React.useState(null);
   const [isClientConnected, setIsClientConnected] = React.useState(false);
+  const [connectionError, setConnectionError] = React.useState(false);
   
   const wsRef = React.useRef(null);
   const statusCheckTimeoutRef = React.useRef(null);
@@ -35,17 +36,26 @@ const Lobby = ({ onStartGame, initialRoomCode }) => {
   React.useEffect(() => {
     const connect = () => {
         clearTimeout(reconnectTimeoutRef.current);
-        if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) return;
+        if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
+          return;
+        }
 
         const ws = new WebSocket(WEBSOCKET_URL);
         wsRef.current = ws;
 
-        ws.onopen = () => setIsClientConnected(true);
+        ws.onopen = () => {
+          setIsClientConnected(true);
+          setConnectionError(false); // Сбрасываем ошибку при успешном подключении
+        };
         ws.onclose = () => {
             setIsClientConnected(false);
             reconnectTimeoutRef.current = setTimeout(connect, 3000);
         };
-        ws.onerror = () => setIsClientConnected(false);
+        ws.onerror = (event) => {
+            console.error("Lobby WebSocket connection error. This usually means the public server is temporarily down or your network is blocking the connection. Reconnecting...");
+            setIsClientConnected(false);
+            setConnectionError(true); // Устанавливаем флаг ошибки
+        }
         ws.onmessage = (event) => {
           let data;
           try { data = JSON.parse(event.data); } catch (e) { return; }
@@ -60,9 +70,14 @@ const Lobby = ({ onStartGame, initialRoomCode }) => {
         };
     };
     connect();
+    
     return () => {
         clearTimeout(reconnectTimeoutRef.current);
-        wsRef.current?.close();
+        const ws = wsRef.current;
+        if (ws) {
+            ws.onclose = null;
+            ws.close();
+        }
     };
   }, []);
 
@@ -114,6 +129,14 @@ const Lobby = ({ onStartGame, initialRoomCode }) => {
   
   const RoomStatusInfo = () => {
     if (!roomCode || roomCode.trim().length < 4) return React.createElement('div', { className: "text-sm text-gray-400 mt-2 min-h-[20px]" }, 'Код должен быть не менее 4 символов');
+    
+    if (connectionError && !isClientConnected) {
+        return React.createElement('div', { className: "text-sm text-red-400 mt-2 min-h-[20px] flex items-center justify-center" }, 
+            React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "h-5 w-5 mr-2", viewBox: "0 0 20 20", fill: "currentColor" }, React.createElement('path', { fillRule: "evenodd", d: "M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z", clipRule: "evenodd" })),
+            'Ошибка сети. Попытка переподключения...'
+        );
+    }
+    
     if (!isClientConnected) return React.createElement('div', { className: "text-sm text-gray-400 mt-2 min-h-[20px] flex items-center justify-center" }, React.createElement('div', {className: "w-4 h-4 border-2 border-t-transparent border-title-yellow rounded-full animate-spin mr-2"}), 'Подключение к сети...');
     if (!roomStatus) return React.createElement('div', { className: "text-sm text-gray-400 mt-2 min-h-[20px]" }, 'Придумайте код или введите существующий');
     
