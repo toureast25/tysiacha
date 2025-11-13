@@ -7,6 +7,7 @@ import { getPlayerBarrelStatus } from '../utils/gameLogic.js';
 
 const Game = ({ roomCode, playerName, onExit }) => {
   const mySessionIdRef = React.useRef(sessionStorage.getItem('tysiacha-sessionId') || `sid_${Math.random().toString(36).substr(2, 9)}`);
+  const [lastReceivedSignal, setLastReceivedSignal] = React.useState(null);
 
   React.useEffect(() => {
     if (!sessionStorage.getItem('tysiacha-sessionId')) {
@@ -14,7 +15,12 @@ const Game = ({ roomCode, playerName, onExit }) => {
     }
   }, []);
 
-  const { connectionStatus, lastReceivedState, lastReceivedAction, lastReceivedSyncRequest, publishState, publishAction, requestStateSync } = useMqtt(roomCode, playerName, mySessionIdRef.current);
+  const { connectionStatus, lastReceivedState, lastReceivedAction, lastReceivedSyncRequest, publishState, publishAction, publishSignal, requestStateSync } = useMqtt(
+      roomCode,
+      playerName,
+      mySessionIdRef.current,
+      (from, signalData) => setLastReceivedSignal({ from, data: signalData, timestamp: Date.now() }) // onSignal callback
+  );
 
   const {
     gameState,
@@ -24,13 +30,21 @@ const Game = ({ roomCode, playerName, onExit }) => {
     requestGameAction,
     handleJoinGame,
     handleLeaveGame: engineHandleLeave,
-  } = useGameEngine(lastReceivedState, lastReceivedAction, lastReceivedSyncRequest, publishState, publishAction, requestStateSync, playerName, mySessionIdRef.current);
+    handleIncomingSignal,
+  } = useGameEngine(lastReceivedState, lastReceivedAction, lastReceivedSyncRequest, publishState, publishAction, publishSignal, requestStateSync, playerName, mySessionIdRef.current);
 
   const [isScoreboardExpanded, setIsScoreboardExpanded] = React.useState(false);
   const [isSpectatorsModalOpen, setIsSpectatorsModalOpen] = React.useState(false);
   const [showRules, setShowRules] = React.useState(false);
   const [isDragOver, setIsDragOver] = React.useState(false);
   const [kickConfirmState, setKickConfirmState] = React.useState({ isOpen: false, player: null });
+
+  React.useEffect(() => {
+    if(lastReceivedSignal) {
+      handleIncomingSignal(lastReceivedSignal.from, lastReceivedSignal.data);
+    }
+  }, [lastReceivedSignal, handleIncomingSignal]);
+
 
   React.useEffect(() => {
     if (playerName) {
