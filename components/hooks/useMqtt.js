@@ -6,6 +6,8 @@ const useMqtt = (roomCode, playerName, mySessionId) => {
   const [connectionStatus, setConnectionStatus] = React.useState('connecting');
   const [lastReceivedState, setLastReceivedState] = React.useState(null);
   const [lastReceivedAction, setLastReceivedAction] = React.useState(null);
+  const [lastReceivedSyncRequest, setLastReceivedSyncRequest] = React.useState(null);
+
   const mqttClientRef = React.useRef(null);
   const isStateReceivedRef = React.useRef(false);
   
@@ -17,11 +19,10 @@ const useMqtt = (roomCode, playerName, mySessionId) => {
   const topic = `${MQTT_TOPIC_PREFIX}/${roomCode}`;
   const presenceTopic = `${topic}/presence`;
   const actionsTopic = `${topic}/actions`;
+  const syncTopic = `${topic}/sync`; // Новая тема для запроса состояния
 
   const publishState = React.useCallback((stateToPublish) => {
     if (mqttClientRef.current && mqttClientRef.current.connected) {
-      // Caller (useGameEngine) is now responsible for versioning, adding senderId,
-      // and updating its own local state. This hook is just a transport layer.
       mqttClientRef.current.publish(topic, JSON.stringify(stateToPublish), { retain: true });
     }
   }, [topic]);
@@ -56,24 +57,26 @@ const useMqtt = (roomCode, playerName, mySessionId) => {
       client.subscribe(topic);
       client.subscribe(actionsTopic);
       client.subscribe(presenceTopic);
+      client.subscribe(syncTopic); // Подписываемся на тему синхронизации
 
+      // Запрашиваем полный "снимок" состояния при подключении
+      client.publish(syncTopic, JSON.stringify({ senderId: mySessionId, type: 'requestState' }));
+
+      // Если в течение 2 секунд не придет состояние, значит, это новая комната.
       setTimeout(() => {
         if (!isStateReceivedRef.current) {
           setLastReceivedState({ isInitial: true });
         }
-      }, 1500);
+      }, 2000);
     });
 
     client.on('message', (receivedTopic, message) => {
       const messageString = message.toString();
       try {
         const payload = JSON.parse(messageString);
-        
-        if (payload.senderId === mySessionId) {
-            return;
-        }
 
         if (receivedTopic === topic) {
+          if (payload.senderId === mySessionId && !payload.isInitial) return;
           isStateReceivedRef.current = true;
           setLastReceivedState(currentState => {
             if (currentState && payload.version <= currentState.version) {
@@ -82,10 +85,16 @@ const useMqtt = (roomCode, playerName, mySessionId) => {
             return payload;
           });
         } else if (receivedTopic === actionsTopic) {
+          // Ключевое изменение: НЕ фильтруем свои же сообщения.
+          // Хост тоже должен получать свои "приказы", чтобы его состояние обновлялось.
           setLastReceivedAction(payload);
         
         } else if (receivedTopic === presenceTopic) {
+          if (payload.senderId === mySessionId) return;
           setLastReceivedAction({ type: 'presenceUpdate', payload });
+        } else if (receivedTopic === syncTopic) {
+          // Получили запрос на синхронизацию
+          setLastReceivedSyncRequest(payload);
         }
       } catch (e) {
         console.error(`Error parsing message on topic ${receivedTopic}:`, e);
@@ -114,9 +123,9 @@ const useMqtt = (roomCode, playerName, mySessionId) => {
         client.end(true);
       }
     };
-  }, [roomCode, mySessionId, topic, presenceTopic, actionsTopic]);
+  }, [roomCode, mySessionId, topic, presenceTopic, actionsTopic, syncTopic]);
 
-  return { connectionStatus, lastReceivedState, lastReceivedAction, publishState, publishAction };
+  return { connectionStatus, lastReceivedState, lastReceivedAction, lastReceivedSyncRequest, publishState, publishAction };
 };
 
 export default useMqtt;
