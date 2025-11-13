@@ -2,7 +2,7 @@
 import React from 'react';
 import { MQTT_BROKER_URL, MQTT_TOPIC_PREFIX } from '../../constants.js';
 
-const useMqtt = (roomCode, playerName, mySessionId) => {
+const useMqtt = (roomCode, playerName, mySessionId, onSignal) => {
   const [connectionStatus, setConnectionStatus] = React.useState('connecting');
   const [lastReceivedState, setLastReceivedState] = React.useState(null);
   const [lastReceivedAction, setLastReceivedAction] = React.useState(null);
@@ -20,6 +20,7 @@ const useMqtt = (roomCode, playerName, mySessionId) => {
   const presenceTopic = `${topic}/presence`;
   const actionsTopic = `${topic}/actions`;
   const syncTopic = `${topic}/sync`;
+  const signalTopic = `${topic}/signal/${mySessionId}`; // Personal signal topic
 
   const publishState = React.useCallback((stateToPublish) => {
     if (mqttClientRef.current && mqttClientRef.current.connected) {
@@ -39,6 +40,14 @@ const useMqtt = (roomCode, playerName, mySessionId) => {
           mqttClientRef.current.publish(actionsTopic, JSON.stringify(action));
       }
   }, [actionsTopic, mySessionId]);
+
+  const publishSignal = React.useCallback((toSessionId, signalData) => {
+    if (mqttClientRef.current && mqttClientRef.current.connected) {
+        const targetTopic = `${topic}/signal/${toSessionId}`;
+        const payload = { from: mySessionId, data: signalData };
+        mqttClientRef.current.publish(targetTopic, JSON.stringify(payload));
+    }
+  }, [topic, mySessionId]);
 
   const requestStateSync = React.useCallback(() => {
       if (mqttClientRef.current && mqttClientRef.current.connected) {
@@ -66,6 +75,7 @@ const useMqtt = (roomCode, playerName, mySessionId) => {
       client.subscribe(actionsTopic);
       client.subscribe(presenceTopic);
       client.subscribe(syncTopic);
+      client.subscribe(signalTopic); // Subscribe to personal signal topic
 
       requestStateSync();
 
@@ -100,6 +110,8 @@ const useMqtt = (roomCode, playerName, mySessionId) => {
           if (payload.senderId !== mySessionId) {
              setLastReceivedSyncRequest(payload);
           }
+        } else if (receivedTopic === signalTopic) {
+            onSignal(payload.from, payload.data);
         }
       } catch (e) {
         console.error(`Error parsing message on topic ${receivedTopic}:`, e);
@@ -128,9 +140,9 @@ const useMqtt = (roomCode, playerName, mySessionId) => {
         client.end(true);
       }
     };
-  }, [roomCode, mySessionId, topic, presenceTopic, actionsTopic, syncTopic, requestStateSync]);
+  }, [roomCode, mySessionId, onSignal, topic, presenceTopic, actionsTopic, syncTopic, signalTopic, requestStateSync]);
 
-  return { connectionStatus, lastReceivedState, lastReceivedAction, lastReceivedSyncRequest, publishState, publishAction, requestStateSync };
+  return { connectionStatus, lastReceivedState, lastReceivedAction, lastReceivedSyncRequest, publishState, publishAction, publishSignal, requestStateSync };
 };
 
 export default useMqtt;
