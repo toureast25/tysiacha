@@ -1,19 +1,20 @@
 // 
 import React from 'react';
-import { MQTT_BROKER_URL, MQTT_TOPIC_PREFIX } from '../constants.js';
+import { WEBSOCKET_URL } from '../constants.js';
 
 const Lobby = ({ onStartGame, initialRoomCode }) => {
   const [roomCode, setRoomCode] = React.useState('');
   const [playerName, setPlayerName] = React.useState('');
-  const [roomStatus, setRoomStatus] = React.useState(null); // { status: 'loading' | 'found' | 'not_found', message?: string, data?: { hostName: string, playerCount: number } }
+  const [roomStatus, setRoomStatus] = React.useState(null);
   const [isClientConnected, setIsClientConnected] = React.useState(false);
   
-  const mqttClientRef = React.useRef(null);
+  const wsRef = React.useRef(null);
   const statusCheckTimeoutRef = React.useRef(null);
-  const currentTopicRef = React.useRef(null);
-  const debounceTimeoutRef = React.useRef(null);
+  const reconnectTimeoutRef = React.useRef(null);
+  const lobbySessionId = React.useRef(`lobby_${Math.random().toString(36).substr(2, 9)}`).current;
+  const roomCodeRef = React.useRef(roomCode);
+  roomCodeRef.current = roomCode;
 
-  // Effect to load saved data and generate initial room code if needed
   React.useEffect(() => {
     const savedName = localStorage.getItem('tysiacha-playerName');
     if (savedName) {
@@ -31,95 +32,67 @@ const Lobby = ({ onStartGame, initialRoomCode }) => {
     }
   }, [initialRoomCode]);
 
-  // Effect to manage the single MQTT client lifecycle
   React.useEffect(() => {
-    const client = mqtt.connect(MQTT_BROKER_URL);
-    mqttClientRef.current = client;
+    const connect = () => {
+        clearTimeout(reconnectTimeoutRef.current);
+        if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) return;
 
-    client.on('connect', () => {
-      setIsClientConnected(true);
-    });
+        const ws = new WebSocket(WEBSOCKET_URL);
+        wsRef.current = ws;
 
-    client.on('close', () => {
-      setIsClientConnected(false);
-    });
-    client.on('error', () => {
-      setIsClientConnected(false);
-    });
-
-    const onMessage = (topic, message) => {
-      // Check if the message is for the topic we are currently interested in
-      if (topic === currentTopicRef.current) {
-        clearTimeout(statusCheckTimeoutRef.current);
-        try {
-          const state = JSON.parse(message.toString());
-          const host = state.players.find(p => p.id === state.hostId);
-          const playerCount = state.players.filter(p => p.isClaimed && !p.isSpectator).length;
-          setRoomStatus({
-            status: 'found',
-            data: {
-              hostName: host ? host.name : 'Неизвестен',
-              playerCount: playerCount,
-            }
-          });
-        } catch (e) {
-          setRoomStatus({ status: 'found' }); // Found, but couldn't parse details
-        }
-      }
+        ws.onopen = () => setIsClientConnected(true);
+        ws.onclose = () => {
+            setIsClientConnected(false);
+            reconnectTimeoutRef.current = setTimeout(connect, 3000);
+        };
+        ws.onerror = () => setIsClientConnected(false);
+        ws.onmessage = (event) => {
+          let data;
+          try { data = JSON.parse(event.data); } catch (e) { return; }
+          
+          if (data.roomCode === roomCodeRef.current.trim().toUpperCase() && data.type === 'lobby_pong') {
+              clearTimeout(statusCheckTimeoutRef.current);
+              setRoomStatus({
+                status: 'found',
+                data: data.payload,
+              });
+          }
+        };
     };
-    
-    client.on('message', onMessage);
-
+    connect();
     return () => {
-      if (client) {
-        client.end(true);
-      }
+        clearTimeout(reconnectTimeoutRef.current);
+        wsRef.current?.close();
     };
   }, []);
 
-  // Debounced effect to check room status, now depends on client connection
   React.useEffect(() => {
-    clearTimeout(debounceTimeoutRef.current);
     clearTimeout(statusCheckTimeoutRef.current);
-
     const code = roomCode.trim().toUpperCase();
-    const client = mqttClientRef.current;
 
     if (!isClientConnected || code.length < 4) {
       setRoomStatus(null);
-      if (client && currentTopicRef.current && client.connected) {
-        client.unsubscribe(currentTopicRef.current);
-      }
-      currentTopicRef.current = null;
       return;
     }
     
-    // Set loading state immediately for better UX
     setRoomStatus({ status: 'loading' });
 
-    debounceTimeoutRef.current = setTimeout(() => {
-      if (!client || !client.connected) {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            roomCode: code,
+            type: 'lobby_ping',
+            senderId: lobbySessionId
+        }));
+
+        statusCheckTimeoutRef.current = setTimeout(() => {
+            setRoomStatus({ status: 'not_found' });
+        }, 2000);
+    } else if (!isClientConnected) {
         setRoomStatus({ status: 'not_found', message: 'Ошибка сети' });
-        return;
-      }
+    }
 
-      // Unsubscribe from the previous topic
-      if (currentTopicRef.current) {
-        client.unsubscribe(currentTopicRef.current);
-      }
-      
-      const newTopic = `${MQTT_TOPIC_PREFIX}/${code}`;
-      currentTopicRef.current = newTopic;
-      client.subscribe(newTopic);
-      
-      // Set a timeout for the 'not_found' case
-      statusCheckTimeoutRef.current = setTimeout(() => {
-        setRoomStatus({ status: 'not_found' });
-      }, 2000); // 2 seconds is plenty for a response over an existing connection
-
-    }, 300); // 300ms debounce delay
-
-  }, [roomCode, isClientConnected]);
+  }, [roomCode, isClientConnected, lobbySessionId]);
 
   const generateRoomCode = () => {
     const chars = 'АБВГДЕЖЗИКЛМНПРСТУФХЦЧШЫЭЮЯ123456789';

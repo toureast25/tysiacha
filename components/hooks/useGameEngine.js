@@ -1,6 +1,5 @@
 // hooks/useGameEngine.js
 import React from 'react';
-import useWebRTC from './useWebRTC.js';
 import {
   createInitialState,
   analyzeDice,
@@ -29,16 +28,6 @@ const gameReducer = (state, action) => {
             return updateState({ ...state, players: newPlayers, hostId: newHostId, gameMessage: message });
         }
         
-        case 'JOIN_REQUEST_ADDED': {
-            const { joinRequest } = payload;
-            // Предотвращаем добавление дубликатов
-            if (state.joinRequests.some(r => r.sessionId === joinRequest.sessionId)) {
-                return state; 
-            }
-            const newJoinRequests = [...state.joinRequests, joinRequest];
-            return updateState({ ...state, joinRequests: newJoinRequests });
-        }
-
         case 'JOIN_REQUEST_HANDLED': {
              return updateState({ ...state, joinRequests: state.joinRequests.filter(r => r.sessionId !== payload.sessionId) });
         }
@@ -153,11 +142,10 @@ const hostActionHandler = (state, action) => {
             if (state.players.some(p => p.sessionId === sessionId) || state.spectators.some(s => s.id === sessionId)) return [];
 
             if (state.isGameStarted) {
-                // Если игра идет, добавляем в запросы на подтверждение.
-                // Отправляем событие всем, чтобы присоединяющийся игрок увидел экран ожидания.
-                const joinRequest = { name, sessionId };
-                orders.push({ type: 'JOIN_REQUEST_ADDED', payload: { joinRequest } });
-                break;
+                // Если игра идет, добавляем в запросы на подтверждение
+                const newJoinRequests = [...(state.joinRequests || []), { name, sessionId }];
+                // Это локальное изменение для хоста, отправляем только обновление state
+                 return [{ type: 'LOCAL_STATE_UPDATE', payload: { joinRequests: newJoinRequests } }];
             }
 
             const joinIndex = state.players.findIndex(p => !p.isClaimed);
@@ -374,27 +362,28 @@ const hostActionHandler = (state, action) => {
 };
 
 
-const useGameEngine = (lastReceivedState, lastReceivedMqttAction, lastReceivedSyncRequest, publishState, publishAction, publishSignal, requestStateSync, playerName, mySessionId) => {
+const useGameEngine = (playerName, mySessionId, comms) => {
+  const { 
+    lastReceivedState, 
+    lastReceivedAction, 
+    lastReceivedSyncRequest, 
+    lastLobbyPing, 
+    publishState, 
+    publishAction, 
+    requestStateSync,
+    sendMessage 
+  } = comms;
+    
   const [gameState, setGameState] = React.useState(null);
   const [actionBuffer, setActionBuffer] = React.useState({});
-  const [isLocked, setIsLocked] = React.useState(false);
-  const [lastReceivedWebRTCAction, setLastReceivedWebRTCAction] = React.useState(null);
-  const processedSequencesRef = React.useRef(new Set());
-
+  const [isLocked, setIsLocked] = React.useState(false); // Состояние блокировки UI
+  
   const gameStateRef = React.useRef(gameState);
   const syncRequestTimerRef = React.useRef(null);
-  const ghostHostTimerRef = React.useRef(null);
   
   React.useEffect(() => {
     gameStateRef.current = gameState;
   }, [gameState]);
-
-  const webRTC = useWebRTC(
-    (toPeerId, signal) => publishSignal(toPeerId, signal), // onSignal
-    (action) => setLastReceivedWebRTCAction({ ...action, uniqueId: `${action.sequence}-${action.timestamp}` }), // onData
-    (peerId) => console.log(`[Engine] WebRTC connection established with ${peerId}`), // onConnect
-    (peerId) => { console.log(`[Engine] WebRTC connection lost with ${peerId}`); } // onDisconnect
-  );
 
   const myPlayerId = React.useMemo(() => {
     return gameState?.players.find(p => p.sessionId === mySessionId)?.id ?? null;
@@ -405,35 +394,13 @@ const useGameEngine = (lastReceivedState, lastReceivedMqttAction, lastReceivedSy
   }, [gameState, mySessionId]);
 
   const isHost = gameState && myPlayerId !== null && myPlayerId === gameState.hostId;
-
-  const handleTakeoverAsHost = React.useCallback((currentState) => {
-    clearTimeout(ghostHostTimerRef.current);
-    clearTimeout(syncRequestTimerRef.current);
-
-    console.log("[GameEngine] Taking over as host.");
-    const initialState = createInitialState();
-    initialState.actionSequence = 0; 
-    initialState.players[0] = { ...initialState.players[0], name: playerName, isClaimed: true, status: 'online', sessionId: mySessionId, lastSeen: Date.now() };
-    initialState.hostId = 0;
-    initialState.gameMessage = `${playerName} создал(а) игру. Ожидание...`;
-    
-    const oldVersion = currentState?.version || 0;
-    const stateToPublish = { ...initialState, version: oldVersion + 1 };
-    
-    setGameState(stateToPublish);
-    publishState(stateToPublish);
-    
-    setActionBuffer({});
-    setIsLocked(false);
-  }, [playerName, mySessionId, publishState, setGameState, setActionBuffer, setIsLocked]);
-
-
+  
   const resetSyncTimer = React.useCallback(() => {
       clearTimeout(syncRequestTimerRef.current);
       syncRequestTimerRef.current = setTimeout(() => {
           console.warn(`[Sync] Waited too long for sequence #${(gameStateRef.current?.actionSequence || 0) + 1}. Requesting full sync.`);
           requestStateSync();
-          setIsLocked(true); 
+          setIsLocked(true); // Блокируем UI пока ждем синхронизацию
       }, 5000);
   }, [requestStateSync]);
 
@@ -448,7 +415,6 @@ const useGameEngine = (lastReceivedState, lastReceivedMqttAction, lastReceivedSy
         const actionToApply = bufferCopy[nextSequence];
         currentState = gameReducer(currentState, actionToApply);
         delete bufferCopy[nextSequence];
-        processedSequencesRef.current.add(actionToApply.sequence);
         nextSequence++;
         processed = true;
     }
@@ -456,7 +422,7 @@ const useGameEngine = (lastReceivedState, lastReceivedMqttAction, lastReceivedSy
     if (processed) {
         setGameState(currentState);
         setActionBuffer(bufferCopy);
-        setIsLocked(false); 
+        setIsLocked(false); // Снимаем блокировку после применения действия
     }
 
     if (Object.keys(bufferCopy).length > 0) {
@@ -465,16 +431,12 @@ const useGameEngine = (lastReceivedState, lastReceivedMqttAction, lastReceivedSy
         clearTimeout(syncRequestTimerRef.current);
     }
   }, [actionBuffer, setActionBuffer, setIsLocked, resetSyncTimer]);
-  
-  const handleIncomingAction = React.useCallback((action) => {
-    if (!action) return;
-    
-    if (gameStateRef.current && action.sequence > (gameStateRef.current.actionSequence || 0)) {
-        clearTimeout(ghostHostTimerRef.current);
-    }
 
-    if (action.type === 'presenceUpdate') {
-      const playerIdx = gameStateRef.current?.players.findIndex(p => p.sessionId === action.payload.sessionId);
+  React.useEffect(() => {
+    if (!lastReceivedAction) return;
+
+    if (lastReceivedAction.type === 'presenceUpdate') {
+      const playerIdx = gameStateRef.current?.players.findIndex(p => p.sessionId === lastReceivedAction.payload.senderId);
       if (playerIdx !== -1 && gameStateRef.current.players[playerIdx].isClaimed) {
           setGameState(prevState => {
               if(!prevState) return null;
@@ -487,14 +449,14 @@ const useGameEngine = (lastReceivedState, lastReceivedMqttAction, lastReceivedSy
       return;
     }
 
-    if (!gameStateRef.current || !('sequence' in action) || processedSequencesRef.current.has(action.sequence)) return;
+    if (!gameStateRef.current || !('sequence' in lastReceivedAction)) return;
     
     const currentSequence = gameStateRef.current.actionSequence || 0;
-    const receivedSequence = action.sequence;
+    const receivedSequence = lastReceivedAction.sequence;
 
     if (receivedSequence <= currentSequence) return;
 
-    const newBuffer = { ...actionBuffer, [receivedSequence]: action };
+    const newBuffer = { ...actionBuffer, [receivedSequence]: lastReceivedAction };
     setActionBuffer(newBuffer);
 
     if (receivedSequence === currentSequence + 1) {
@@ -503,42 +465,28 @@ const useGameEngine = (lastReceivedState, lastReceivedMqttAction, lastReceivedSy
     } else {
         resetSyncTimer();
     }
-  }, [actionBuffer, processActionQueue, resetSyncTimer]);
+
+  }, [lastReceivedAction, processActionQueue, actionBuffer, resetSyncTimer]);
 
   React.useEffect(() => {
-      handleIncomingAction(lastReceivedMqttAction);
-  }, [lastReceivedMqttAction, handleIncomingAction]);
-  
-  React.useEffect(() => {
-      handleIncomingAction(lastReceivedWebRTCAction);
-  }, [lastReceivedWebRTCAction, handleIncomingAction]);
-
-  React.useEffect(() => {
-    const actionToProcess = lastReceivedMqttAction || lastReceivedWebRTCAction;
-      if (actionToProcess && isHost) {
-          let orders = hostActionHandler(gameStateRef.current, actionToProcess);
+      if (lastReceivedAction && isHost) {
+          let orders = hostActionHandler(gameStateRef.current, lastReceivedAction);
           if (orders.length > 0) {
               if(orders[0].type === 'LOCAL_STATE_UPDATE') {
                   setGameState(prevState => ({...prevState, ...orders[0].payload}));
               } else {
                   orders.forEach((order, index) => {
                       const sequence = (gameStateRef.current.actionSequence || 0) + 1 + index;
-                      const actionWithSeq = { ...order, sequence };
                       publishAction(order.type, order.payload, sequence);
-                      webRTC.broadcast(actionWithSeq);
                   });
               }
           }
       }
-  }, [lastReceivedMqttAction, lastReceivedWebRTCAction, isHost, publishAction, webRTC]);
+  }, [lastReceivedAction, isHost, publishAction]);
 
   React.useEffect(() => {
     if (!lastReceivedState) return;
-
-    clearTimeout(ghostHostTimerRef.current);
-    clearTimeout(syncRequestTimerRef.current);
-    processedSequencesRef.current.clear();
-
+    
     if (lastReceivedState.isInitial) {
       const initialState = createInitialState();
       initialState.actionSequence = 0;
@@ -550,26 +498,10 @@ const useGameEngine = (lastReceivedState, lastReceivedMqttAction, lastReceivedSy
       publishState(stateToPublish);
       return;
     }
-
-    const isRoomEffectivelyEmpty = lastReceivedState.players.every(p => !p.isClaimed);
-    if (isRoomEffectivelyEmpty) {
-        handleTakeoverAsHost(lastReceivedState);
-        return;
-    }
     
     setGameState(lastReceivedState);
-    for(let i = 1; i <= lastReceivedState.actionSequence; i++) {
-        processedSequencesRef.current.add(i);
-    }
-    setIsLocked(false);
-    
-    ghostHostTimerRef.current = setTimeout(() => {
-        const currentHost = gameStateRef.current?.players.find(p => p.id === gameStateRef.current?.hostId);
-        if (currentHost && currentHost.sessionId !== mySessionId && myPlayerId === null) {
-             console.warn("[GameEngine] Ghost host detected after timeout. Taking over.");
-             handleTakeoverAsHost(gameStateRef.current);
-        }
-    }, 5000); 
+    setIsLocked(false); // Снимаем блокировку после полной синхронизации
+    clearTimeout(syncRequestTimerRef.current);
 
     const newBuffer = {};
     for (const seq in actionBuffer) {
@@ -582,7 +514,7 @@ const useGameEngine = (lastReceivedState, lastReceivedMqttAction, lastReceivedSy
         processActionQueue(lastReceivedState);
     }
 
-  }, [lastReceivedState, playerName, mySessionId, publishState, processActionQueue, actionBuffer, handleTakeoverAsHost, myPlayerId]);
+  }, [lastReceivedState, playerName, mySessionId, publishState, processActionQueue, actionBuffer]);
 
   React.useEffect(() => {
       if (lastReceivedSyncRequest && isHost && gameStateRef.current) {
@@ -591,52 +523,27 @@ const useGameEngine = (lastReceivedState, lastReceivedMqttAction, lastReceivedSy
   }, [lastReceivedSyncRequest, isHost, publishState]);
 
   React.useEffect(() => {
-      if (isHost && gameState) {
-          const connectedPeers = webRTC.getPeers();
-          gameState.players.forEach(player => {
-              if (player.isClaimed && player.sessionId !== mySessionId && !connectedPeers.includes(player.sessionId)) {
-                  console.log(`[Engine] Host attempting to connect to new player: ${player.name}`);
-                  webRTC.connect(player.sessionId, true); 
-              }
-          });
-      }
-  }, [gameState, isHost, mySessionId, webRTC]);
+    if (isHost && lastLobbyPing && gameStateRef.current) {
+        const playerCount = gameStateRef.current.players.filter(p => p.isClaimed && !p.isSpectator).length;
+        const host = gameStateRef.current.players.find(p => p.id === gameStateRef.current.hostId);
+        
+        sendMessage('lobby_pong', {
+            hostName: host ? host.name : 'Неизвестен',
+            playerCount: playerCount,
+        });
+    }
+  }, [isHost, lastLobbyPing, sendMessage]);
 
 
   const requestGameAction = (type, payload = {}) => {
       if (type === 'toggleDieSelection') {
-          if (isLocked) return; 
+          if (isLocked) return; // Не позволяем выбирать кости, пока UI заблокирован
           setGameState(currentState => gameReducer(currentState, {type: 'TOGGLE_DIE_SELECTION_LOCAL', payload}));
           return;
       }
       
-      setIsLocked(true);
-      const actionPayload = { type, payload, senderId: mySessionId, timestamp: Date.now() };
-
-      if (isHost) {
-          const orders = hostActionHandler(gameStateRef.current, actionPayload);
-          if (orders.length > 0) {
-             if(orders[0].type === 'LOCAL_STATE_UPDATE') {
-                  setGameState(prevState => ({...prevState, ...orders[0].payload}));
-                  setIsLocked(false);
-              } else {
-                  orders.forEach((order, index) => {
-                    const sequence = (gameStateRef.current.actionSequence || 0) + 1 + index;
-                    const actionWithSeq = { ...order, sequence, senderId: mySessionId, timestamp: Date.now() };
-                    publishAction(order.type, order.payload, sequence);
-                    webRTC.broadcast(actionWithSeq);
-                  });
-              }
-          } else {
-            setIsLocked(false); 
-          }
-      } else { 
-          const host = gameStateRef.current.players.find(p => p.id === gameStateRef.current.hostId);
-          if (host) {
-            webRTC.send(host.sessionId, actionPayload);
-            publishAction(type, payload);
-          }
-      }
+      setIsLocked(true); // Блокируем UI для любого действия, требующего ответа хоста
+      publishAction(type, payload);
   };
   
   const handleJoinGame = () => {
@@ -647,7 +554,7 @@ const useGameEngine = (lastReceivedState, lastReceivedMqttAction, lastReceivedSy
     requestGameAction('leaveGame', { sessionId: mySessionId });
   };
   
-  return { gameState, myPlayerId, isSpectator, isLocked, requestGameAction, handleJoinGame, handleLeaveGame, handleIncomingSignal: webRTC.handleIncomingSignal };
+  return { gameState, myPlayerId, isSpectator, isLocked, requestGameAction, handleJoinGame, handleLeaveGame };
 };
 
 export default useGameEngine;

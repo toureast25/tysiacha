@@ -7,7 +7,6 @@ import { getPlayerBarrelStatus } from '../utils/gameLogic.js';
 
 const Game = ({ roomCode, playerName, onExit }) => {
   const mySessionIdRef = React.useRef(sessionStorage.getItem('tysiacha-sessionId') || `sid_${Math.random().toString(36).substr(2, 9)}`);
-  const [lastReceivedSignal, setLastReceivedSignal] = React.useState(null);
 
   React.useEffect(() => {
     if (!sessionStorage.getItem('tysiacha-sessionId')) {
@@ -15,12 +14,7 @@ const Game = ({ roomCode, playerName, onExit }) => {
     }
   }, []);
 
-  const { connectionStatus, lastReceivedState, lastReceivedAction, lastReceivedSyncRequest, publishState, publishAction, publishSignal, requestStateSync } = useMqtt(
-      roomCode,
-      playerName,
-      mySessionIdRef.current,
-      (from, signalData) => setLastReceivedSignal({ from, data: signalData, timestamp: Date.now() }) // onSignal callback
-  );
+  const comms = useMqtt(roomCode, playerName, mySessionIdRef.current);
 
   const {
     gameState,
@@ -30,21 +24,13 @@ const Game = ({ roomCode, playerName, onExit }) => {
     requestGameAction,
     handleJoinGame,
     handleLeaveGame: engineHandleLeave,
-    handleIncomingSignal,
-  } = useGameEngine(lastReceivedState, lastReceivedAction, lastReceivedSyncRequest, publishState, publishAction, publishSignal, requestStateSync, playerName, mySessionIdRef.current);
+  } = useGameEngine(playerName, mySessionIdRef.current, comms);
 
   const [isScoreboardExpanded, setIsScoreboardExpanded] = React.useState(false);
   const [isSpectatorsModalOpen, setIsSpectatorsModalOpen] = React.useState(false);
   const [showRules, setShowRules] = React.useState(false);
   const [isDragOver, setIsDragOver] = React.useState(false);
   const [kickConfirmState, setKickConfirmState] = React.useState({ isOpen: false, player: null });
-
-  React.useEffect(() => {
-    if(lastReceivedSignal) {
-      handleIncomingSignal(lastReceivedSignal.from, lastReceivedSignal.data);
-    }
-  }, [lastReceivedSignal, handleIncomingSignal]);
-
 
   React.useEffect(() => {
     if (playerName) {
@@ -117,13 +103,13 @@ const Game = ({ roomCode, playerName, onExit }) => {
     }
   };
   
-  if (connectionStatus !== 'connected' || !gameState) {
+  if (comms.connectionStatus !== 'connected' || !gameState) {
     return React.createElement('div', { className: "text-center" }, 
       React.createElement('h2', { className: "font-ruslan text-4xl text-title-yellow mb-4" }, 'Подключение...'),
       React.createElement('p', { className: "text-lg" }, 
-        connectionStatus === 'connecting' ? 'Устанавливаем связь с сервером...' : 
-        connectionStatus === 'reconnecting' ? 'Потеряна связь, переподключаемся...' :
-        connectionStatus === 'error' ? 'Ошибка подключения. Попробуйте обновить страницу.' :
+        comms.connectionStatus === 'connecting' ? 'Устанавливаем связь с сервером...' : 
+        comms.connectionStatus === 'reconnecting' ? 'Потеряна связь, переподключаемся...' :
+        comms.connectionStatus === 'error' ? 'Ошибка подключения. Попробуйте обновить страницу.' :
         'Загрузка игровой комнаты...'
       )
     );
