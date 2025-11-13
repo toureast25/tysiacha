@@ -14,15 +14,15 @@ const Game = ({ roomCode, playerName, onExit }) => {
     }
   }, []);
 
-  // useMqtt now returns publishAction for sending delta updates
+  // useMqtt теперь возвращает publishAction для отправки запросов действий
   const { connectionStatus, lastReceivedState, lastReceivedAction, publishState, publishAction } = useMqtt(roomCode, playerName, mySessionIdRef.current);
 
-  // useGameEngine now takes publishAction and lastReceivedAction
+  // useGameEngine теперь реализует логику "Диктатура Хоста"
   const {
     gameState,
     myPlayerId,
     isSpectator,
-    handleGameAction, // This function now handles optimistic updates and publishing actions
+    requestGameAction, // Функция для отправки "просьб" хосту
     handleJoinGame,
     handleLeaveGame: engineHandleLeave,
     handleJoinRequest,
@@ -54,7 +54,7 @@ const Game = ({ roomCode, playerName, onExit }) => {
   }, [myPlayerId, roomCode, playerName, isSpectator]);
 
   const handleLeaveGame = () => {
-    engineHandleLeave(); // This now uses publishState for the leave event
+    engineHandleLeave(); 
     onExit();
   };
 
@@ -65,8 +65,8 @@ const Game = ({ roomCode, playerName, onExit }) => {
 
   const handleConfirmKick = () => {
     if (kickConfirmState.player) {
-      // Dispatch the action with both IDs for robustness.
-      handleGameAction('kickPlayer', { 
+      // Отправляем запрос на исключение игрока
+      requestGameAction('kickPlayer', { 
           playerId: kickConfirmState.player.id,
           sessionId: kickConfirmState.player.sessionId 
       });
@@ -88,11 +88,11 @@ const Game = ({ roomCode, playerName, onExit }) => {
     if (myPlayerId !== gameState.currentPlayerIndex) return;
     const type = e.dataTransfer.getData('text/plain');
     if (type === 'selection' && gameState.canKeep) {
-      handleGameAction('keepDice', { indices: gameState.selectedDiceIndices });
+      requestGameAction('keepDice', { indices: gameState.selectedDiceIndices });
     } else {
       try {
         const indices = JSON.parse(e.dataTransfer.getData('application/json'));
-        if (Array.isArray(indices)) handleGameAction('keepDice', { indices });
+        if (Array.isArray(indices)) requestGameAction('keepDice', { indices });
       } catch (error) { console.error("Drop error:", error); }
     }
   };
@@ -100,9 +100,9 @@ const Game = ({ roomCode, playerName, onExit }) => {
   const handleDieDoubleClick = (index) => {
     if (myPlayerId !== gameState.currentPlayerIndex) return;
     if (gameState.selectedDiceIndices.length > 0 && gameState.selectedDiceIndices.includes(index)) {
-        if(gameState.canKeep) handleGameAction('keepDice', { indices: gameState.selectedDiceIndices });
+        if(gameState.canKeep) requestGameAction('keepDice', { indices: gameState.selectedDiceIndices });
     } else {
-        handleGameAction('keepDice', { indices: [index] });
+        requestGameAction('keepDice', { indices: [index] });
     }
   };
   
@@ -126,7 +126,7 @@ const Game = ({ roomCode, playerName, onExit }) => {
   
   const currentPlayer = gameState.players[gameState.currentPlayerIndex];
   const isCurrentPlayerInactive = currentPlayer && (currentPlayer.status === 'away' || currentPlayer.status === 'disconnected');
-  const showSkipButton = !isMyTurn && isCurrentPlayerInactive && !gameState.isGameOver && (Date.now() - gameState.turnStartTime > 60000);
+  const showSkipButton = isHost && !isMyTurn && isCurrentPlayerInactive && !gameState.isGameOver && (Date.now() - gameState.turnStartTime > 60000);
   const canJoin = myPlayerId === null && !isSpectator;
   const availableSlotsForJoin = gameState.players.filter(p => !p.isClaimed && !p.isSpectator).length;
   const isAwaitingApproval = myPlayerId === null && gameState.joinRequests && gameState.joinRequests.some(r => r.sessionId === mySessionIdRef.current);
@@ -177,14 +177,14 @@ const Game = ({ roomCode, playerName, onExit }) => {
     onSetIsSpectatorsModalOpen: setIsSpectatorsModalOpen,
     onSetIsScoreboardExpanded: setIsScoreboardExpanded,
     onSetIsDragOver: setIsDragOver,
-    onRollDice: () => handleGameAction('rollDice'),
-    onBankScore: () => handleGameAction('bankScore'),
-    onSkipTurn: () => handleGameAction('skipTurn'),
-    onNewGame: () => handleGameAction('newGame'),
-    onStartOfficialGame: () => handleGameAction('startOfficialGame'),
+    onRollDice: () => requestGameAction('rollDice'),
+    onBankScore: () => requestGameAction('bankScore'),
+    onSkipTurn: () => requestGameAction('skipTurn'),
+    onNewGame: () => requestGameAction('newGame'),
+    onStartOfficialGame: () => requestGameAction('startOfficialGame'),
     onJoinGame: handleJoinGame,
     onJoinRequest: handleJoinRequest,
-    onToggleDieSelection: (index) => handleGameAction('toggleDieSelection', { index }),
+    onToggleDieSelection: (index) => requestGameAction('toggleDieSelection', { index }),
     onDragStart: handleDragStart,
     onDrop: handleDrop,
     onDieDoubleClick: handleDieDoubleClick,
