@@ -1,148 +1,153 @@
 // hooks/useMqtt.js
+// !!! ВНИМАНИЕ: Этот файл теперь содержит логику для WebSocket, а не MQTT. !!!
+// Название файла сохранено для минимизации изменений в структуре проекта.
 import React from 'react';
-import { MQTT_BROKER_URL, MQTT_TOPIC_PREFIX } from '../../constants.js';
+import { WEBSOCKET_URL } from '../../constants.js';
 
-const useMqtt = (roomCode, playerName, mySessionId, onSignal) => {
+const useMqtt = (roomCode, playerName, mySessionId) => {
   const [connectionStatus, setConnectionStatus] = React.useState('connecting');
   const [lastReceivedState, setLastReceivedState] = React.useState(null);
   const [lastReceivedAction, setLastReceivedAction] = React.useState(null);
   const [lastReceivedSyncRequest, setLastReceivedSyncRequest] = React.useState(null);
+  const [lastLobbyPing, setLastLobbyPing] = React.useState(null);
 
-  const mqttClientRef = React.useRef(null);
+  const wsRef = React.useRef(null);
+  const reconnectTimeoutRef = React.useRef(null);
   const isStateReceivedRef = React.useRef(false);
-  
   const lastReceivedStateRef = React.useRef(lastReceivedState);
   React.useEffect(() => {
     lastReceivedStateRef.current = lastReceivedState;
   }, [lastReceivedState]);
 
-  const topic = `${MQTT_TOPIC_PREFIX}/${roomCode}`;
-  const presenceTopic = `${topic}/presence`;
-  const actionsTopic = `${topic}/actions`;
-  const syncTopic = `${topic}/sync`;
-  const signalTopic = `${topic}/signal/${mySessionId}`; // Personal signal topic
-
-  const publishState = React.useCallback((stateToPublish) => {
-    if (mqttClientRef.current && mqttClientRef.current.connected) {
-      mqttClientRef.current.publish(topic, JSON.stringify(stateToPublish), { retain: true });
+  const sendMessage = React.useCallback((type, payload) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      const message = {
+        roomCode,
+        senderId: mySessionId,
+        type,
+        payload,
+      };
+      wsRef.current.send(JSON.stringify(message));
     }
-  }, [topic]);
+  }, [roomCode, mySessionId]);
 
-  const publishAction = React.useCallback((actionType, payload, sequence) => {
-      if (mqttClientRef.current && mqttClientRef.current.connected) {
-          const action = {
-              type: actionType,
-              payload: payload,
-              senderId: mySessionId,
-              sequence: sequence, // Добавляем порядковый номер
-              timestamp: Date.now()
-          };
-          mqttClientRef.current.publish(actionsTopic, JSON.stringify(action));
-      }
-  }, [actionsTopic, mySessionId]);
-
-  const publishSignal = React.useCallback((toSessionId, signalData) => {
-    if (mqttClientRef.current && mqttClientRef.current.connected) {
-        const targetTopic = `${topic}/signal/${toSessionId}`;
-        const payload = { from: mySessionId, data: signalData };
-        mqttClientRef.current.publish(targetTopic, JSON.stringify(payload));
+  const connect = React.useCallback(() => {
+    clearTimeout(reconnectTimeoutRef.current);
+    if (wsRef.current) {
+        wsRef.current.onclose = null; 
+        wsRef.current.close();
     }
-  }, [topic, mySessionId]);
 
-  const requestStateSync = React.useCallback(() => {
-      if (mqttClientRef.current && mqttClientRef.current.connected) {
-          console.log(`[Sync] Requesting full state from host.`);
-          mqttClientRef.current.publish(syncTopic, JSON.stringify({ senderId: mySessionId, type: 'requestState' }));
-      }
-  }, [syncTopic, mySessionId]);
+    setConnectionStatus('connecting');
+    const ws = new WebSocket(WEBSOCKET_URL);
+    wsRef.current = ws;
 
-
-  React.useEffect(() => {
-    const connectOptions = {
-      clientId: `tysiacha-pwa-${mySessionId}`,
-      clean: true,
-      connectTimeout: 8000,
-      reconnectPeriod: 5000,
-      keepalive: 30,
-    };
-    const client = mqtt.connect(MQTT_BROKER_URL, connectOptions);
-    mqttClientRef.current = client;
-    isStateReceivedRef.current = false;
-
-    client.on('connect', () => {
+    ws.onopen = () => {
       setConnectionStatus('connected');
-      client.subscribe(topic);
-      client.subscribe(actionsTopic);
-      client.subscribe(presenceTopic);
-      client.subscribe(syncTopic);
-      client.subscribe(signalTopic); // Subscribe to personal signal topic
-
-      requestStateSync();
-
+      sendMessage('sync_request', { type: 'requestState' });
       setTimeout(() => {
         if (!isStateReceivedRef.current) {
           setLastReceivedState({ isInitial: true });
         }
-      }, 2000);
-    });
+      }, 5000);
+    };
 
-    client.on('message', (receivedTopic, message) => {
-      const messageString = message.toString();
-      try {
-        const payload = JSON.parse(messageString);
+    ws.onmessage = (event) => {
+      let data;
+      try { data = JSON.parse(event.data); } catch (e) { return; }
 
-        if (receivedTopic === topic) {
+      if (data.roomCode !== roomCode || data.senderId === mySessionId) {
+        return;
+      }
+
+      switch (data.type) {
+        case 'state':
           isStateReceivedRef.current = true;
           setLastReceivedState(currentState => {
-            if (currentState && payload.version <= currentState.version && !payload.isFullSync) {
+            if (currentState && data.payload.version <= currentState.version && !data.payload.isFullSync) {
               return currentState;
             }
-            return payload;
+            return data.payload;
           });
-        } else if (receivedTopic === actionsTopic) {
-          setLastReceivedAction({ ...payload, uniqueId: `${payload.sequence}-${payload.timestamp}` });
-        
-        } else if (receivedTopic === presenceTopic) {
-          if (payload.senderId === mySessionId) return;
-          // Presence is not sequenced, it's a transient state update
-          setLastReceivedAction({ type: 'presenceUpdate', payload, uniqueId: `presence-${Date.now()}` });
-        } else if (receivedTopic === syncTopic) {
-          if (payload.senderId !== mySessionId) {
-             setLastReceivedSyncRequest(payload);
+          break;
+        case 'action':
+          setLastReceivedAction({ ...data.payload, senderId: data.senderId, uniqueId: `${data.payload.sequence}-${data.payload.timestamp}` });
+          break;
+        case 'sync_request':
+          if (data.senderId !== mySessionId) {
+            setLastReceivedSyncRequest(data.payload);
           }
-        } else if (receivedTopic === signalTopic) {
-            onSignal(payload.from, payload.data);
-        }
-      } catch (e) {
-        console.error(`Error parsing message on topic ${receivedTopic}:`, e);
-      }
-    });
-
-    client.on('error', (err) => {
-        console.error('MQTT Connection Error:', err);
-        setConnectionStatus('error');
-    });
-    client.on('offline', () => setConnectionStatus('reconnecting'));
-    client.on('reconnect', () => setConnectionStatus('reconnecting'));
-
-    const heartbeatInterval = setInterval(() => {
-      if (client.connected && lastReceivedStateRef.current) {
-        const me = lastReceivedStateRef.current.players?.find(p => p.sessionId === mySessionId);
-        if (me && me.isClaimed && !me.isSpectator) {
-          client.publish(presenceTopic, JSON.stringify({ playerId: me.id, sessionId: mySessionId }));
-        }
-      }
-    }, 5000);
-
-    return () => {
-      clearInterval(heartbeatInterval);
-      if (client) {
-        client.end(true);
+          break;
+        case 'presence':
+           const me = lastReceivedStateRef.current?.players?.find(p => p.sessionId === mySessionId);
+           if (me && me.isClaimed) {
+             setLastReceivedAction({ type: 'presenceUpdate', payload: { senderId: data.senderId }, uniqueId: `presence-${Date.now()}` });
+           }
+          break;
+        case 'lobby_ping':
+           setLastLobbyPing({ senderId: data.senderId, timestamp: Date.now() });
+           break;
       }
     };
-  }, [roomCode, mySessionId, onSignal, topic, presenceTopic, actionsTopic, syncTopic, signalTopic, requestStateSync]);
 
-  return { connectionStatus, lastReceivedState, lastReceivedAction, lastReceivedSyncRequest, publishState, publishAction, publishSignal, requestStateSync };
+    ws.onerror = (err) => {
+      console.error('WebSocket Error:', err);
+      ws.close();
+    };
+    
+    ws.onclose = () => {
+      if (document.visibilityState === 'visible') {
+        setConnectionStatus('reconnecting');
+        reconnectTimeoutRef.current = setTimeout(connect, 3000);
+      }
+    };
+  }, [roomCode, mySessionId]);
+
+  React.useEffect(() => {
+    connect();
+    const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible' && (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED)) {
+            connect();
+        }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      clearTimeout(reconnectTimeoutRef.current);
+      if (wsRef.current) {
+          wsRef.current.onclose = null;
+          wsRef.current.close();
+      }
+    };
+  }, [connect]);
+  
+  React.useEffect(() => {
+    const heartbeatInterval = setInterval(() => {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          const me = lastReceivedStateRef.current?.players?.find(p => p.sessionId === mySessionId);
+          if (me && me.isClaimed && !me.isSpectator) {
+              sendMessage('presence', { playerId: me.id });
+          }
+      }
+    }, 5000);
+    return () => clearInterval(heartbeatInterval);
+  }, [sendMessage, mySessionId]);
+
+  const publishState = (stateToPublish) => sendMessage('state', stateToPublish);
+  const publishAction = (actionType, payload, sequence) => sendMessage('action', { type: actionType, payload, sequence, timestamp: Date.now() });
+  const requestStateSync = () => sendMessage('sync_request', { type: 'requestState' });
+
+  return { 
+    connectionStatus, 
+    lastReceivedState, 
+    lastReceivedAction, 
+    lastReceivedSyncRequest,
+    lastLobbyPing,
+    publishState, 
+    publishAction, 
+    requestStateSync,
+    sendMessage 
+  };
 };
 
 export default useMqtt;

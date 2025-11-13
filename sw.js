@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tysiacha-cache-v1.5'; // Increment cache version
+const CACHE_NAME = 'tysiacha-cache-v1.3'; // Increment cache version
 const urlsToCache = [
   '.', // Кэшируем корневую директорию (эквивалент '/')
   'index.html',
@@ -16,9 +16,8 @@ const urlsToCache = [
   'components/SpectatorsModal.js',
   'components/KickConfirmModal.js',
   'components/PlayerContextMenu.js',
-  'components/hooks/useMqtt.js',
-  'components/hooks/useGameEngine.js',
-  'components/hooks/useWebRTC.js' // Add new WebRTC hook
+  'components/hooks/useMqtt.js', // Add new hook
+  'components/hooks/useGameEngine.js' // Add new hook
 ];
 
 self.addEventListener('install', event => {
