@@ -394,6 +394,15 @@ const useGameEngine = (lastReceivedState, lastReceivedMqttAction, lastReceivedSy
 
   const isHost = gameState && myPlayerId !== null && myPlayerId === gameState.hostId;
 
+  const resetSyncTimer = React.useCallback(() => {
+      clearTimeout(syncRequestTimerRef.current);
+      syncRequestTimerRef.current = setTimeout(() => {
+          console.warn(`[Sync] Waited too long for sequence #${(gameStateRef.current?.actionSequence || 0) + 1}. Requesting full sync.`);
+          requestStateSync();
+          setIsLocked(true); // Блокируем UI пока ждем синхронизацию
+      }, 5000);
+  }, [requestStateSync]);
+
   const processActionQueue = React.useCallback((state) => {
     let currentState = state;
     let nextSequence = (currentState?.actionSequence || 0) + 1;
@@ -422,15 +431,6 @@ const useGameEngine = (lastReceivedState, lastReceivedMqttAction, lastReceivedSy
         clearTimeout(syncRequestTimerRef.current);
     }
   }, [actionBuffer, setActionBuffer, setIsLocked, resetSyncTimer]);
-
-  const resetSyncTimer = React.useCallback(() => {
-      clearTimeout(syncRequestTimerRef.current);
-      syncRequestTimerRef.current = setTimeout(() => {
-          console.warn(`[Sync] Waited too long for sequence #${(gameStateRef.current?.actionSequence || 0) + 1}. Requesting full sync.`);
-          requestStateSync();
-          setIsLocked(true); // Блокируем UI пока ждем синхронизацию
-      }, 5000);
-  }, [requestStateSync]);
   
   const handleIncomingAction = React.useCallback((action) => {
     if (!action) return;
