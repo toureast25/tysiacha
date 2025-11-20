@@ -15,30 +15,22 @@ import {
 function gameReducer(state, action) {
   if (action.type === 'SET_STATE') {
       if (!action.payload) return state;
-      // Клиент просто принимает состояние от Хоста
-      // Хост может загружать сохранение
       return action.payload;
   }
-
-  // Все остальные действия обрабатываются только на ХОСТЕ (или локально перед отправкой, но мы используем авторитет хоста)
-  // Поэтому Reducer должен быть чистой функцией логики игры.
   
   const newState = { ...state, version: (state.version || 1) + 1 };
   
   switch (action.type) {
     case 'PLAYER_JOIN': {
         const { playerName, sessionId, asSpectator } = action.payload;
-        // Проверка на дубликаты
         if (newState.players.some(p => p.sessionId === sessionId) || newState.spectators.some(s => s.id === sessionId)) {
              return state;
         }
-
         if (asSpectator) {
             return { ...newState, spectators: [...newState.spectators, { name: playerName, id: sessionId }] };
         }
-        
         const joinIndex = newState.players.findIndex(p => !p.isClaimed);
-        if (joinIndex === -1) return newState; // No slots
+        if (joinIndex === -1) return newState;
 
         const restoredScore = newState.leavers?.[playerName] || 0;
         const newLeavers = { ...newState.leavers };
@@ -49,17 +41,14 @@ function gameReducer(state, action) {
             ? { ...p, name: playerName, isClaimed: true, scores: restoredScore > 0 ? [restoredScore] : [], status: 'online', sessionId, hasEnteredGame: restoredScore > 0, lastSeen: Date.now() } 
             : p
         );
-        
         return { ...newState, players: newPlayers, leavers: newLeavers, gameMessage: `${playerName} присоединился.` };
     }
     
     case 'PLAYER_LEAVE': {
       const { sessionId } = action.payload;
-      // Если это зритель
       if (newState.spectators.some(s => s.id === sessionId)) {
            return {...newState, spectators: newState.spectators.filter(s => s.id !== sessionId)};
       }
-
       const playerIndex = newState.players.findIndex(p => p.sessionId === sessionId);
       if (playerIndex === -1) return newState;
       
@@ -70,8 +59,6 @@ function gameReducer(state, action) {
       const newLeavers = totalScore > 0 ? { ...newState.leavers, [playerToRemove.name]: totalScore } : newState.leavers;
       
       let newPlayers = newState.players.map(p => p.sessionId === sessionId ? { ...createInitialState().players[0], id: p.id, name: `Игрок ${p.id + 1}` } : p);
-      
-      // В P2P Хост не может выйти без закрытия игры, но логика выхода игроков остается
       const gameWasInProgress = !newState.isGameOver && newState.isGameStarted;
       let newCurrentPlayerIndex = newState.currentPlayerIndex;
 
@@ -88,7 +75,6 @@ function gameReducer(state, action) {
       if (gameWasInProgress && newState.currentPlayerIndex === playerIndex) {
           message += ` Ход ${newPlayers[newCurrentPlayerIndex].name}.`;
       }
-      
       return { ...newState, players: newPlayers, leavers: newLeavers, gameMessage: message, currentPlayerIndex: newCurrentPlayerIndex };
     }
     
@@ -101,15 +87,12 @@ function gameReducer(state, action) {
 
         const selectedValues = newSelectedIndices.map(i => newState.diceOnBoard[i]);
         let validation = validateSelection(selectedValues);
-
-        // Пытаемся валидировать вместе с уже отложенными в этом броске
         if (!validation.isValid && selectedValues.length > 0) {
             const combinedValidation = validateSelection([...newState.diceKeptFromThisRoll, ...selectedValues]);
             if (combinedValidation.isValid) {
                 validation = { isValid: true, score: combinedValidation.score - validateSelection(newState.diceKeptFromThisRoll).score };
             }
         }
-        
         return {
             ...newState,
             selectedDiceIndices: newSelectedIndices,
@@ -123,9 +106,7 @@ function gameReducer(state, action) {
         const { indices } = action.payload;
         const combinedDice = [...newState.diceKeptFromThisRoll, ...indices.map(i => newState.diceOnBoard[i])];
         const validation = validateSelection(combinedDice);
-
         if (!validation.isValid) return newState;
-
         const newTurnScore = newState.scoreFromPreviousRolls + validation.score;
         const scoreAdded = newTurnScore - newState.currentTurnScore;
         const newKeptDiceThisTurn = [...newState.keptDiceThisTurn, ...indices.map(i => newState.diceOnBoard[i])];
@@ -149,7 +130,6 @@ function gameReducer(state, action) {
     
     case 'ROLL_DICE': {
         if (!newState.canRoll || newState.isGameOver || !newState.isGameStarted) return state;
-
         const isHotDiceRoll = newState.keptDiceThisTurn.length >= 5;
         const diceToRollCount = isHotDiceRoll ? 5 : 5 - newState.keptDiceThisTurn.length;
         const newDice = Array.from({ length: diceToRollCount }, () => Math.floor(Math.random() * 6) + 1);
@@ -159,7 +139,6 @@ function gameReducer(state, action) {
             const currentPlayer = newState.players[newState.currentPlayerIndex];
             let updatedPlayer = { ...currentPlayer, scores: [...currentPlayer.scores, '/'] };
             const barrelStatus = getPlayerBarrelStatus(currentPlayer);
-
             if (barrelStatus) {
                 updatedPlayer.barrelBolts = (updatedPlayer.barrelBolts || 0) + 1;
                 if (updatedPlayer.barrelBolts >= 3) {
@@ -169,13 +148,10 @@ function gameReducer(state, action) {
                     updatedPlayer.justResetFromBarrel = true;
                 }
             }
-
             const newPlayers = newState.players.map((p, i) => i === newState.currentPlayerIndex ? updatedPlayer : p);
             const nextPlayerIndex = findNextActivePlayer(newState.currentPlayerIndex, newPlayers);
             const nextPlayer = newPlayers[nextPlayerIndex];
-
             let gameMessage = `${currentPlayer.name} получает болт! Ход ${nextPlayer.name}.`;
-
             return { ...createInitialState(), players: newPlayers.map(p => ({ ...p, justResetFromBarrel: false })), spectators: newState.spectators, leavers: newState.leavers, hostId: newState.hostId, isGameStarted: true, currentPlayerIndex: nextPlayerIndex, diceOnBoard: newDice, gameMessage, turnStartTime: Date.now(), canRoll: true };
         } else {
             return {
@@ -196,7 +172,6 @@ function gameReducer(state, action) {
     
     case 'BANK_SCORE': {
         if (!newState.canBank || newState.isGameOver) return state;
-
         const finalTurnScore = newState.currentTurnScore + newState.potentialScore;
         const currentPlayer = newState.players[newState.currentPlayerIndex];
         
@@ -221,16 +196,13 @@ function gameReducer(state, action) {
         if (finalTurnScore === 0 && newState.keptDiceThisTurn.length > 0) {
             return getBoltState(currentPlayer);
         }
-
         if (!currentPlayer.hasEnteredGame && finalTurnScore < 50) {
             const nextIdx = findNextActivePlayer(newState.currentPlayerIndex, newState.players);
             return { ...createInitialState(), players: newState.players, spectators: newState.spectators, leavers: newState.leavers, hostId: newState.hostId, isGameStarted: true, canRoll: true, currentPlayerIndex: nextIdx, gameMessage: `${currentPlayer.name} не набрал 50 для входа.`, turnStartTime: Date.now() };
         }
-
         const barrelStatus = getPlayerBarrelStatus(currentPlayer);
         const totalBefore = calculateTotalScore(currentPlayer);
         const failedBarrel = (barrelStatus === '200-300' && totalBefore + finalTurnScore < 300) || (barrelStatus === '700-800' && totalBefore + finalTurnScore < 800);
-
         if (failedBarrel) {
             return getBoltState(currentPlayer, barrelStatus);
         }
@@ -249,7 +221,6 @@ function gameReducer(state, action) {
                 return { ...p, scores: [...p.scores, (newBarrel === '200-300' ? 150 : 650) - oldTotal] };
             }
             if (totalBefore < oldTotal && newTotal >= oldTotal && oldTotal >= 100) {
-                // Штраф за обгон
                 const scoreAfterPenalty = oldTotal - 50;
                 const wouldLandOnBarrel = (scoreAfterPenalty >= 200 && scoreAfterPenalty < 300) || (scoreAfterPenalty >= 700 && scoreAfterPenalty < 800);
                 if (!wouldLandOnBarrel && !p.justResetFromBarrel) {
@@ -259,11 +230,9 @@ function gameReducer(state, action) {
             }
             return p;
         });
-        
         if (newTotal >= 1000) {
             return { ...createInitialState(), players: playersWithPenalties, isGameOver: true, gameMessage: `${currentPlayer.name} победил, набрав ${newTotal}!` };
         }
-
         const nextIdx = findNextActivePlayer(newState.currentPlayerIndex, playersWithPenalties);
         let msg = `${currentPlayer.name} записал ${finalTurnScore}. ${penaltyMsgs.join(' ')} Ход ${playersWithPenalties[nextIdx].name}.`;
         return { ...createInitialState(), players: playersWithPenalties.map(p => ({...p, justResetFromBarrel: false})), spectators: newState.spectators, leavers: newState.leavers, hostId: newState.hostId, isGameStarted: true, canRoll: true, currentPlayerIndex: nextIdx, gameMessage: msg, turnStartTime: Date.now() };
@@ -297,7 +266,6 @@ function gameReducer(state, action) {
         const { playerId } = action.payload;
         const playerToKick = newState.players.find(p => p.id === playerId);
         if (!playerToKick) return state;
-        
         let newPlayers = newState.players.map(p => p.id === playerId ? { ...createInitialState().players[0], id: p.id, name: `Игрок ${p.id + 1}` } : p);
         let newCurrentPlayerIndex = newState.currentPlayerIndex;
         if(newState.currentPlayerIndex === playerId) {
@@ -324,168 +292,232 @@ const findNextActivePlayer = (startIndex, players) => {
 
 // --- GAME COMPONENT ---
 
-const Game = ({ roomCode, playerName, onExit }) => {
+const Game = ({ roomCode, playerName, initialMode, onExit }) => {
   const [gameState, dispatch] = React.useReducer(gameReducer, null);
   const [myPlayerId, setMyPlayerId] = React.useState(null);
   const [isSpectator, setIsSpectator] = React.useState(false);
-  const [connectionStatus, setConnectionStatus] = React.useState('connecting'); // connecting, connected, error, reconnecting
-  const [isHost, setIsHost] = React.useState(false);
+  const [connectionStatus, setConnectionStatus] = React.useState('connecting'); // connecting, connected, error, error_busy, retrying
+  const [isHost, setIsHost] = React.useState(initialMode === 'create');
+  const [retryCount, setRetryCount] = React.useState(0);
 
   const mySessionIdRef = React.useRef(sessionStorage.getItem('tysiacha-sessionId') || `sid_${Math.random().toString(36).substr(2, 9)}`);
-  
-  // P2P References
-  const peerRef = React.useRef(null); // For Host and Client
-  const connectionsRef = React.useRef([]); // For Host: list of connected clients
-  const hostConnRef = React.useRef(null); // For Client: connection to host
+  const peerRef = React.useRef(null);
+  const connectionsRef = React.useRef([]);
+  const hostConnRef = React.useRef(null);
+  const isCleanedUp = React.useRef(false);
+  const wakeLockRef = React.useRef(null);
 
   React.useEffect(() => {
     sessionStorage.setItem('tysiacha-sessionId', mySessionIdRef.current);
+    return () => { isCleanedUp.current = true; };
+  }, []);
+  
+  // --- WAKE LOCK ---
+  React.useEffect(() => {
+    const requestWakeLock = async () => {
+      if ('wakeLock' in navigator) {
+        try {
+          const lock = await navigator.wakeLock.request('screen');
+          wakeLockRef.current = lock;
+          console.log('Wake Lock active');
+          lock.addEventListener('release', () => {
+              console.log('Wake Lock released');
+          });
+        } catch (err) {
+          console.warn('Wake Lock error:', err);
+        }
+      }
+    };
+    
+    const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible' && (!wakeLockRef.current || wakeLockRef.current.released)) {
+            requestWakeLock();
+        }
+    };
+
+    requestWakeLock();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        if (wakeLockRef.current) wakeLockRef.current.release().catch(() => {});
+    };
   }, []);
 
-  // --- HOST LOGIC ---
-  const initializeHost = () => {
-    if (peerRef.current) peerRef.current.destroy();
+  // --- HOST SETUP with RETRY ---
+  const initializeHost = (retriesLeft = 5) => {
+    if (peerRef.current) {
+        peerRef.current.destroy();
+        peerRef.current = null;
+    }
 
-    const peer = initHostPeer(roomCode);
-    peerRef.current = peer;
+    try {
+        const peer = initHostPeer(roomCode);
+        peerRef.current = peer;
 
-    peer.on('open', (id) => {
-        console.log('HOST: Session started with ID', id);
-        setIsHost(true);
-        setConnectionStatus('connected');
-        
-        // Load saved state or create new
-        const savedState = localStorage.getItem(`tysiacha-state-${roomCode}`);
-        let initialState;
-        if (savedState) {
-             try {
-                 initialState = JSON.parse(savedState);
-                 // Ensure I am in the game
-                 if (!initialState.players.some(p => p.sessionId === mySessionIdRef.current)) {
-                    // Add host back if missing (unlikely if localStorage is correct)
-                 }
-             } catch (e) { initialState = createInitialState(); }
-        } else {
-            initialState = createInitialState();
-            initialState.hostId = 0; // Slot 0 is host
-            initialState.players[0] = { 
-                ...initialState.players[0], 
-                name: playerName, 
-                isClaimed: true, 
-                sessionId: mySessionIdRef.current, 
-                status: 'online' 
-            };
-            initialState.gameMessage = `${playerName} создал(а) игру.`;
-        }
-        
-        dispatch({ type: 'SET_STATE', payload: initialState });
-    });
+        peer.on('open', (id) => {
+            if (isCleanedUp.current) return;
+            console.log('HOST: Session started with ID', id);
+            setIsHost(true);
+            setConnectionStatus('connected');
+            
+            const savedState = localStorage.getItem(`tysiacha-state-${roomCode}`);
+            let initialState;
+            if (savedState) {
+                try {
+                    initialState = JSON.parse(savedState);
+                } catch (e) { initialState = createInitialState(); }
+            } else {
+                initialState = createInitialState();
+                initialState.hostId = 0;
+                initialState.players[0] = { 
+                    ...initialState.players[0], 
+                    name: playerName, 
+                    isClaimed: true, 
+                    sessionId: mySessionIdRef.current, 
+                    status: 'online' 
+                };
+                initialState.gameMessage = `${playerName} создал(а) игру.`;
+            }
+            dispatch({ type: 'SET_STATE', payload: initialState });
+        });
 
-    peer.on('connection', (conn) => {
-        console.log('HOST: Client connected', conn.peer);
-        connectionsRef.current.push(conn);
-        
-        conn.on('open', () => {
-            // Send current state immediately
-            if (gameState) {
-                conn.send({ type: 'SET_STATE', payload: gameState });
+        peer.on('connection', (conn) => {
+            connectionsRef.current.push(conn);
+            conn.on('open', () => {
+                if (gameState) conn.send({ type: 'SET_STATE', payload: gameState });
+            });
+            conn.on('data', (action) => {
+                if (action.type) dispatch({ ...action, _senderId: conn.metadata?.sessionId });
+            });
+            conn.on('close', () => {
+                connectionsRef.current = connectionsRef.current.filter(c => c !== conn);
+            });
+        });
+
+        peer.on('error', (err) => {
+            console.error('HOST Error:', err);
+            if (err.type === 'unavailable-id') {
+                // The ID is taken. This can happen if the previous session is ghosting on the server.
+                // We need to destroy this instance (which is now invalid) and try again.
+                if (peerRef.current) peerRef.current.destroy();
+
+                if (retriesLeft > 0 && !isCleanedUp.current) {
+                    const delay = 2000; // Wait 2s for server to potentially clear old ID
+                    console.log(`Host ID taken, retrying in ${delay}ms... (${retriesLeft} left)`);
+                    setConnectionStatus('retrying');
+                    
+                    setTimeout(() => {
+                        if (!isCleanedUp.current) initializeHost(retriesLeft - 1);
+                    }, delay);
+                } else {
+                    if (!isCleanedUp.current) setConnectionStatus('error_busy');
+                }
+            } else {
+                if (!isCleanedUp.current && connectionStatus !== 'retrying') setConnectionStatus('error');
             }
         });
-
-        conn.on('data', (action) => {
-            // Process action from client
-            if (action.type) {
-                // Inject sessionId for security checks if needed
-                dispatch({ ...action, _senderId: conn.metadata?.sessionId });
-            }
-        });
-
-        conn.on('close', () => {
-            console.log('HOST: Client disconnected');
-            connectionsRef.current = connectionsRef.current.filter(c => c !== conn);
-            // Optionally mark player as offline
-        });
-    });
-
-    peer.on('error', (err) => {
-        console.error('HOST Error:', err);
-        if (err.type === 'unavailable-id') {
-            // ID Taken -> Room exists -> Become Client
-            console.log('Room exists, switching to Client mode...');
-            peer.destroy();
-            initializeClient();
-        } else {
-            setConnectionStatus('error');
-        }
-    });
+    } catch (e) {
+        console.error(e);
+        setConnectionStatus('error');
+    }
   };
 
-  // --- CLIENT LOGIC ---
-  const initializeClient = () => {
+  // --- CLIENT SETUP ---
+  const initializeClient = (retries = 3) => {
       if (peerRef.current) peerRef.current.destroy();
       
-      const peer = initClientPeer();
-      peerRef.current = peer;
+      try {
+          const peer = initClientPeer();
+          peerRef.current = peer;
+          let connectionTimeout;
 
-      peer.on('open', () => {
-          const conn = connectToHost(peer, roomCode, { sessionId: mySessionIdRef.current, name: playerName });
-          hostConnRef.current = conn;
+          peer.on('open', () => {
+              if (isCleanedUp.current) return;
+              const conn = connectToHost(peer, roomCode, { sessionId: mySessionIdRef.current, name: playerName });
+              hostConnRef.current = conn;
 
-          conn.on('open', () => {
-              console.log('CLIENT: Connected to Host');
-              setConnectionStatus('connected');
-              // Request to join automatically
-              conn.send({ type: 'PLAYER_JOIN', payload: { playerName, sessionId: mySessionIdRef.current } });
-          });
+              // Timeout if host doesn't answer
+              connectionTimeout = setTimeout(() => {
+                  if (connectionStatus !== 'connected' && !isCleanedUp.current) {
+                      console.warn('Connection timed out');
+                      setConnectionStatus('error_timeout');
+                      conn.close();
+                  }
+              }, 6000);
 
-          conn.on('data', (action) => {
-              if (action.type === 'SET_STATE') {
-                  dispatch({ type: 'SET_STATE', payload: action.payload });
-              }
-          });
+              conn.on('open', () => {
+                  clearTimeout(connectionTimeout);
+                  if (isCleanedUp.current) return;
+                  console.log('CLIENT: Connected to Host');
+                  setConnectionStatus('connected');
+                  conn.send({ type: 'PLAYER_JOIN', payload: { playerName, sessionId: mySessionIdRef.current } });
+              });
 
-          conn.on('close', () => {
-              console.log('CLIENT: Disconnected from Host');
-              setConnectionStatus('reconnecting');
+              conn.on('data', (action) => {
+                  if (action.type === 'SET_STATE') {
+                      dispatch({ type: 'SET_STATE', payload: action.payload });
+                  }
+              });
+
+              conn.on('close', () => {
+                  console.log('CLIENT: Disconnected from Host');
+                  if (!isCleanedUp.current) setConnectionStatus('reconnecting');
+              });
+              
+              conn.on('error', () => {
+                   if (!isCleanedUp.current) setConnectionStatus('error');
+              });
           });
           
-          conn.on('error', () => {
-              setConnectionStatus('error');
+          peer.on('error', (err) => {
+              // If Host ID is unavailable, it might be starting up. Retry.
+              if (err.type === 'peer-unavailable') {
+                  if (retries > 0 && !isCleanedUp.current) {
+                       console.log(`Host not found yet, retrying... (${retries} left)`);
+                       setTimeout(() => {
+                           if(!isCleanedUp.current) {
+                               initializeClient(retries - 1);
+                           }
+                       }, 2000);
+                       return;
+                  }
+              }
+              console.error('CLIENT Peer Error:', err);
+              if (!isCleanedUp.current) setConnectionStatus('error');
           });
-      });
-      
-      peer.on('error', (err) => {
-          console.error('CLIENT Peer Error:', err);
+      } catch(e) {
+          console.error(e);
           setConnectionStatus('error');
-      });
+      }
   };
 
   // --- INITIALIZATION ---
   React.useEffect(() => {
-      // Try to become Host first
-      initializeHost();
+      isCleanedUp.current = false;
+      if (initialMode === 'create') {
+          initializeHost(5); // Start with 5 retries for Host to handle ghosting
+      } else {
+          initializeClient(3); // Start with retries for Client too
+      }
 
       return () => {
+          isCleanedUp.current = true;
           if (peerRef.current) peerRef.current.destroy();
       };
-  }, [roomCode]); // Run once on mount
+  }, [roomCode, initialMode, retryCount]); // Retry count allows manual retry
 
-  // --- HOST: BROADCAST STATE ---
+  // --- HOST: BROADCAST ---
   React.useEffect(() => {
-      if (isHost && gameState) {
-          // Save state
+      if (isHost && gameState && connectionsRef.current) {
           localStorage.setItem(`tysiacha-state-${roomCode}`, JSON.stringify(gameState));
-          
-          // Broadcast to all clients
           connectionsRef.current.forEach(conn => {
-              if (conn.open) {
-                  conn.send({ type: 'SET_STATE', payload: gameState });
-              }
+              if (conn.open) conn.send({ type: 'SET_STATE', payload: gameState });
           });
       }
   }, [gameState, isHost, roomCode]);
 
-  // --- IDENTIFY SELF ---
+  // --- SELF IDENTITY ---
   React.useEffect(() => {
       if (gameState) {
           const me = gameState.players.find(p => p.sessionId === mySessionIdRef.current);
@@ -493,59 +525,80 @@ const Game = ({ roomCode, playerName, onExit }) => {
           setIsSpectator(gameState.spectators.some(s => s.id === mySessionIdRef.current));
           
           if (me) {
-            localStorage.setItem('tysiacha-session', JSON.stringify({ roomCode, playerName }));
+            localStorage.setItem('tysiacha-session', JSON.stringify({ 
+                roomCode, 
+                playerName,
+                mode: isHost ? 'create' : 'join' // Save mode for reload
+            }));
           }
       }
-  }, [gameState]);
+  }, [gameState, isHost]);
 
-
-  // --- ACTION DISPATCHER ---
   const sendAction = (action) => {
       if (isHost) {
           dispatch(action);
       } else if (hostConnRef.current && hostConnRef.current.open) {
           hostConnRef.current.send(action);
-      } else {
-          console.warn('Cannot send action: No connection');
       }
   };
   
-  // UI Helpers
+  const manualRetry = () => {
+      setConnectionStatus('connecting');
+      setRetryCount(prev => prev + 1);
+  };
+
   const [isScoreboardExpanded, setIsScoreboardExpanded] = React.useState(false);
   const [isSpectatorsModalOpen, setIsSpectatorsModalOpen] = React.useState(false);
   const [showRules, setShowRules] = React.useState(false);
   const [isDragOver, setIsDragOver] = React.useState(false);
   const [kickConfirmState, setKickConfirmState] = React.useState({ isOpen: false, player: null });
 
-  // --- RENDER ---
   if (connectionStatus !== 'connected' && !gameState) {
+      let errorMsg = '';
+      let subMsg = '';
+      if (connectionStatus === 'error_busy') {
+          errorMsg = 'Код комнаты занят';
+          subMsg = 'Не удалось создать игру, так как этот код используется. Если вы перезагрузили страницу, подождите 10 секунд и нажмите "Повторить".';
+      } else if (connectionStatus === 'error_timeout') {
+          errorMsg = 'Хост не отвечает';
+          subMsg = 'Не удалось подключиться к хосту. Возможно, он вышел из игры или у него проблемы с сетью.';
+      } else if (connectionStatus === 'error') {
+          errorMsg = 'Ошибка подключения';
+          subMsg = 'Не удалось найти комнату или проблемы с P2P соединением. Проверьте код.';
+      } else if (connectionStatus === 'retrying') {
+          errorMsg = 'Переподключение...';
+          subMsg = 'Освобождаем код комнаты после перезагрузки...';
+      }
+
       return React.createElement('div', { className: "text-center w-full p-8" }, 
-        React.createElement('h2', { className: "font-ruslan text-4xl text-title-yellow mb-4" }, 'Подключение P2P...'),
-        React.createElement('p', { className: "text-lg mb-4" }, 
-            connectionStatus === 'error' ? 'Ошибка подключения к P2P сети.' : 'Устанавливаем прямое соединение...'
+        React.createElement('h2', { className: `font-ruslan text-4xl mb-4 ${connectionStatus.startsWith('error') ? 'text-red-500' : 'text-title-yellow'}` }, 
+            connectionStatus.startsWith('error') ? errorMsg : (connectionStatus === 'retrying' ? errorMsg : 'Подключение...')
         ),
-        connectionStatus === 'reconnecting' && React.createElement('p', { className: "text-yellow-400" }, 'Потеряна связь с Хостом. Переподключение...'),
-        React.createElement('div', { className: "w-8 h-8 border-4 border-t-transparent border-title-yellow rounded-full animate-spin mx-auto" }),
-        React.createElement('button', { onClick: onExit, className: "mt-8 px-4 py-2 bg-slate-700 rounded" }, "Отмена")
+        (connectionStatus.startsWith('error') || connectionStatus === 'retrying') && React.createElement('p', { className: "text-lg mb-6 max-w-md mx-auto" }, subMsg),
+        
+        (connectionStatus === 'connecting' || connectionStatus === 'retrying') && React.createElement('div', { className: "w-8 h-8 border-4 border-t-transparent border-title-yellow rounded-full animate-spin mx-auto" }),
+        
+        React.createElement('div', { className: 'flex justify-center gap-4 mt-8' },
+            React.createElement('button', { onClick: onExit, className: "px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded" }, "Вернуться в меню"),
+            connectionStatus.startsWith('error') && React.createElement('button', { onClick: manualRetry, className: "px-4 py-2 bg-green-600 hover:bg-green-700 rounded" }, "Повторить")
+        )
       );
   }
 
   if (!gameState) return null;
 
   const isMyTurn = myPlayerId === gameState.currentPlayerIndex && !isSpectator;
-  // Host logic based on PeerJS role, but also check game state hostId logic for gameplay rights
   const isGameHost = myPlayerId === gameState.hostId; 
   
-  // Simplified UI Props mapping
   const uiProps = {
     roomCode,
     gameState,
     myPlayerId,
     isSpectator,
     isMyTurn,
-    isHost: isGameHost, // UI permission
+    isHost: isGameHost,
     canJoin: myPlayerId === null && !isSpectator,
-    isAwaitingApproval: false, // removed for simplicity in P2P for now
+    isAwaitingApproval: false,
     showRules,
     isSpectatorsModalOpen,
     isScoreboardExpanded,
@@ -569,7 +622,7 @@ const Game = ({ roomCode, playerName, onExit }) => {
     onStartOfficialGame: () => sendAction({ type: 'START_OFFICIAL_GAME' }),
     onJoinGame: () => sendAction({ type: 'PLAYER_JOIN', payload: { playerName, sessionId: mySessionIdRef.current } }),
     onJoinRequest: () => {}, 
-    onToggleDieSelection: (index) => dispatch({ type: 'TOGGLE_DIE_SELECTION', payload: { index } }), // Local immediate feedback, validated by state update
+    onToggleDieSelection: (index) => dispatch({ type: 'TOGGLE_DIE_SELECTION', payload: { index } }),
     onDragStart: (e, index) => { e.dataTransfer.setData('application/json', JSON.stringify([index])); },
     onDrop: (e) => { 
         e.preventDefault(); 
