@@ -1,9 +1,14 @@
 
 // --- P2P NETWORK UTILITIES ---
-// Note: Filename is kept as mqttUtils.js to avoid breaking imports,
-// but the implementation is now purely PeerJS (WebRTC).
-
 import { PEER_PREFIX } from '../constants.js';
+
+const iceServers = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:global.stun.twilio.com:3478' }
+];
 
 // Генерирует полный ID пира на основе кода комнаты
 export const getRoomPeerId = (roomCode) => {
@@ -12,16 +17,18 @@ export const getRoomPeerId = (roomCode) => {
 
 // Инициализация Хоста (Сервера)
 export const initHostPeer = (roomCode) => {
+    if (!window.Peer) {
+        console.error("PeerJS library not loaded");
+        throw new Error("PeerJS library not loaded");
+    }
+
     const peerId = getRoomPeerId(roomCode);
     console.log('[P2P] Initializing Host with ID:', peerId);
     
-    const peer = new Peer(peerId, {
-        debug: 1,
+    const peer = new window.Peer(peerId, {
+        debug: 1, // Errors only
         config: {
-            'iceServers': [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:global.stun.twilio.com:3478' }
-            ]
+            'iceServers': iceServers
         }
     });
     
@@ -30,14 +37,16 @@ export const initHostPeer = (roomCode) => {
 
 // Инициализация Клиента (Случайный ID)
 export const initClientPeer = () => {
+    if (!window.Peer) {
+        console.error("PeerJS library not loaded");
+        throw new Error("PeerJS library not loaded");
+    }
+
     console.log('[P2P] Initializing Client');
-    const peer = new Peer(null, { // Random ID
-        debug: 1,
+    const peer = new window.Peer(null, { // Random ID
+        debug: 0, // Suppress "Could not connect to peer" errors in console
         config: {
-            'iceServers': [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:global.stun.twilio.com:3478' }
-            ]
+            'iceServers': iceServers
         }
     });
     return peer;

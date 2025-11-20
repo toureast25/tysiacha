@@ -1,14 +1,13 @@
 
 import React from 'react';
-import { initClientPeer, connectToHost } from '../utils/mqttUtils.js'; // Actually imports PeerJS utils
+import { initClientPeer, connectToHost } from '../utils/mqttUtils.js';
 
 const Lobby = ({ onStartGame, initialRoomCode }) => {
   const [roomCode, setRoomCode] = React.useState('');
   const [playerName, setPlayerName] = React.useState('');
-  const [roomStatus, setRoomStatus] = React.useState(null); // { status: 'loading' | 'found' | 'not_found', message?: string }
+  const [roomStatus, setRoomStatus] = React.useState(null); // { status: 'loading' | 'found' | 'not_found' | 'uncertain', message?: string }
   const [isLoading, setIsLoading] = React.useState(false);
 
-  // Effect to load saved data and generate initial room code if needed
   React.useEffect(() => {
     const savedName = localStorage.getItem('tysiacha-playerName');
     if (savedName) {
@@ -22,86 +21,99 @@ const Lobby = ({ onStartGame, initialRoomCode }) => {
   }, [initialRoomCode]);
 
   const generateRoomCode = () => {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Removed confusing chars like I, 1, O, 0
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; 
     let result = '';
-    for (let i = 0; i < 5; i++) { // 5 chars is enough for P2P collision avoidance usually
+    for (let i = 0; i < 5; i++) {
       result += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     setRoomCode(result);
-    setRoomStatus(null);
+    setRoomStatus(null); 
   };
 
-  // Проверка существования комнаты через попытку подключения
   const checkRoom = React.useCallback(async () => {
     const code = roomCode.trim().toUpperCase();
-    if (code.length < 4) return;
+    // Strict length check prevents trying to connect to typos like 'CE3VVDDD'
+    if (code.length !== 5) return;
 
     setIsLoading(true);
     setRoomStatus({ status: 'loading' });
 
     try {
         const peer = initClientPeer();
+        let isDestroyed = false;
+        let isFound = false;
         
         peer.on('open', () => {
+            if (isDestroyed) return;
             const conn = connectToHost(peer, code);
-            let connected = false;
-
-            // Таймаут на поиск комнаты
+            
+            // Тайм-аут на поиск комнаты
             const timeout = setTimeout(() => {
-                if (!connected) {
-                    setRoomStatus({ status: 'not_found', message: 'Комната не найдена или хост оффлайн' });
+                if (!isFound && !isDestroyed) {
+                    setRoomStatus({ status: 'uncertain', message: 'Хост не отвечает (попробуйте войти)' });
                     conn.close();
                     peer.destroy();
+                    isDestroyed = true;
                     setIsLoading(false);
                 }
-            }, 3000); // 3 секунды на поиск
+            }, 5000); // 5 секунд
 
             conn.on('open', () => {
-                connected = true;
+                isFound = true;
                 clearTimeout(timeout);
-                // Мы подключились - значит комната есть
-                // Спрашиваем инфо? Пока просто считаем что нашли.
-                // Для P2P лучше не держать лишних соединений в лобби.
-                setRoomStatus({ status: 'found', message: 'Комната найдена!' });
-                
-                // Закрываем тестовое соединение
-                setTimeout(() => {
-                    conn.close();
-                    peer.destroy();
-                    setIsLoading(false);
-                }, 500);
+                if (!isDestroyed) {
+                    setRoomStatus({ status: 'found', message: 'Комната найдена!' });
+                    setTimeout(() => {
+                        conn.close();
+                        peer.destroy();
+                        isDestroyed = true;
+                        setIsLoading(false);
+                    }, 200);
+                }
+            });
+            
+            conn.on('error', (err) => {
+                 // Connection-specific errors don't mean ID is invalid, just connection failed
             });
 
             peer.on('error', (err) => {
-                console.log('Peer Check Error', err);
-                // Обычно peer-unavailable падает сюда
                 clearTimeout(timeout);
-                setRoomStatus({ status: 'not_found', message: 'Комната не существует' });
-                peer.destroy();
-                setIsLoading(false);
+                if (!isDestroyed) {
+                     // 'peer-unavailable' - это ЕДИНСТВЕННЫЙ гарант того, что комнаты нет.
+                     if (err.type === 'peer-unavailable') {
+                        setRoomStatus({ status: 'not_found', message: 'Комната свободна' });
+                     } else {
+                        // Suppress console warning for expected connection errors during check
+                        if (err.type !== 'peer-unavailable') console.warn('Peer Check Warning:', err.type);
+                        setRoomStatus({ status: 'uncertain', message: 'Ошибка связи (попробуйте войти)' });
+                     }
+                     peer.destroy();
+                     isDestroyed = true;
+                     setIsLoading(false);
+                }
             });
         });
 
         peer.on('error', (err) => {
-             console.warn('Peer Init Error', err);
-             setIsLoading(false);
-             setRoomStatus({ status: 'not_found', message: 'Ошибка сети P2P' });
+             // Init error
+             if (!isDestroyed) {
+                 setIsLoading(false);
+                 setRoomStatus({ status: 'uncertain', message: 'Ошибка P2P' });
+                 isDestroyed = true;
+             }
         });
 
     } catch (e) {
         console.error(e);
-        setRoomStatus({ status: 'not_found', message: 'Ошибка' });
+        setRoomStatus({ status: 'uncertain', message: 'Ошибка инициализации' });
         setIsLoading(false);
     }
   }, [roomCode]);
 
-  // Debounced check handled manually by user clicking "Check" or Effect? 
-  // Let's make it explicit for P2P to save resources, or simple timeout
+  // Reset status on typing
   React.useEffect(() => {
-      if (roomCode.length >= 4) {
+      if (roomCode.length === 5) {
           const timer = setTimeout(() => {
-             // В P2P проверка дорогая (создает сокеты), поэтому не делаем её на каждый чих
-             // Но для UX можно сбросить статус
              setRoomStatus(null); 
           }, 500);
           return () => clearTimeout(timer);
@@ -113,48 +125,61 @@ const Lobby = ({ onStartGame, initialRoomCode }) => {
     const finalRoomCode = roomCode.trim().toUpperCase();
     const finalPlayerName = playerName.trim();
     
-    if (finalRoomCode.length >= 4 && finalPlayerName.length > 2) {
+    if (finalRoomCode.length === 5 && finalPlayerName.length > 2) {
       localStorage.setItem('tysiacha-playerName', finalPlayerName);
-      // Если мы не проверяли комнату или не нашли её, мы считаем что создаем новую (Хост)
-      // Если нашли - мы Джойнер
-      // НО: В P2P Хост должен захватить ID. Если ID занят, он не сможет стать Хостом.
-      // Поэтому мы передаем управление в Game, и Game сама разрулит (станет хостом или подключится)
-      // Исходя из UX: Кнопка "Создать" и "Войти" может быть одна.
-      // Game.js попытается стать Хостом. Если ID занят -> подключится как клиент.
       
-      onStartGame(finalRoomCode, finalPlayerName);
+      let mode = 'join'; // Default safe assumption
+      
+      if (roomStatus?.status === 'not_found') {
+          mode = 'create';
+      } else if (roomStatus?.status === 'found') {
+          mode = 'join';
+      } else if (roomStatus === null) {
+          mode = 'join'; 
+      }
+      
+      onStartGame(finalRoomCode, finalPlayerName, mode);
     }
   };
   
   const RoomStatusInfo = () => {
-    if (!roomCode || roomCode.trim().length < 4) return React.createElement('div', { className: "text-sm text-gray-400 mt-2 min-h-[20px]" }, 'Код должен быть не менее 4 символов');
+    if (!roomCode || roomCode.trim().length < 5) return React.createElement('div', { className: "text-sm text-gray-400 mt-2 min-h-[20px]" }, 'Код должен быть из 5 символов');
     
     if (isLoading || roomStatus?.status === 'loading') {
          return React.createElement('div', { className: "text-sm text-gray-400 mt-2 min-h-[20px] flex items-center justify-center" }, 
             React.createElement('div', { className: "flex items-center" },
                 React.createElement('div', {className: "w-4 h-4 border-2 border-t-transparent border-title-yellow rounded-full animate-spin mr-2"}), 
-                'Поиск комнаты в P2P сети...'
+                'Проверка комнаты...'
             )
         );
     }
 
     if (roomStatus?.status === 'found') {
         return React.createElement('div', { className: "text-sm text-green-400 mt-2 min-h-[20px] flex items-center justify-center font-bold" }, 
-             'Комната найдена! Нажмите Войти.'
+             'Комната найдена! Вы войдете как игрок.'
         );
     }
     
     if (roomStatus?.status === 'not_found') {
         return React.createElement('div', { className: "text-sm text-blue-300 mt-2 min-h-[20px] flex items-center justify-center" }, 
-             'Комната свободна. Вы станете Хостом.'
+             'Комната свободна. Вы создадите игру.'
+        );
+    }
+
+    if (roomStatus?.status === 'uncertain') {
+        return React.createElement('div', { className: "text-sm text-yellow-400 mt-2 min-h-[20px] flex items-center justify-center" }, 
+             roomStatus.message || 'Статус неизвестен'
         );
     }
     
-    return React.createElement('div', { className: "text-sm text-gray-500 mt-2 min-h-[20px]" }, 'Введите код для входа или создания');
+    return React.createElement('div', { className: "text-sm text-gray-500 mt-2 min-h-[20px]" }, 'Нажмите "Проверить" или "Играть"');
   }
 
-  const buttonText = 'Играть';
-  const isButtonDisabled = roomCode.trim().length < 4 || playerName.trim().length < 3 || isLoading;
+  let buttonText = 'Войти';
+  if (roomStatus?.status === 'not_found') buttonText = 'Создать игру';
+  if (roomStatus?.status === 'uncertain') buttonText = 'Попробовать войти';
+
+  const isButtonDisabled = roomCode.trim().length !== 5 || playerName.trim().length < 3 || isLoading;
 
   return React.createElement(
     'div',
@@ -195,9 +220,10 @@ const Lobby = ({ onStartGame, initialRoomCode }) => {
               id: "roomCode",
               type: "text",
               value: roomCode,
-              onChange: (e) => setRoomCode(e.target.value.toUpperCase()),
-              onBlur: checkRoom, // Проверяем комнату когда закончили ввод
-              placeholder: "Введите код",
+              onChange: (e) => setRoomCode(e.target.value.toUpperCase().slice(0, 5)),
+              onBlur: checkRoom, 
+              placeholder: "5 символов",
+              maxLength: 5,
               className: "w-full p-3 pr-12 text-center bg-slate-900 border-2 border-slate-600 rounded-lg text-2xl font-mono tracking-widest text-white focus:outline-none focus:border-highlight transition-colors"
             }),
             React.createElement(
@@ -218,13 +244,26 @@ const Lobby = ({ onStartGame, initialRoomCode }) => {
         React.createElement(RoomStatusInfo, null)
       ),
       React.createElement(
-        'button',
-        {
-          onClick: handleStart,
-          className: "w-full py-3 bg-green-600 hover:bg-green-700 rounded-lg text-xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed",
-          disabled: isButtonDisabled
-        },
-        buttonText
+        'div',
+        { className: "flex gap-3" },
+        React.createElement(
+            'button',
+            {
+              onClick: checkRoom,
+              disabled: isButtonDisabled,
+              className: "flex-1 py-3 bg-slate-600 hover:bg-slate-700 rounded-lg font-bold transition-all disabled:bg-gray-500 disabled:cursor-not-allowed"
+            },
+            "Проверить"
+        ),
+        React.createElement(
+            'button',
+            {
+              onClick: handleStart,
+              className: "flex-[2] py-3 bg-green-600 hover:bg-green-700 rounded-lg text-xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed",
+              disabled: isButtonDisabled
+            },
+            buttonText
+        )
       )
     )
   );

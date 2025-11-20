@@ -21,48 +21,36 @@ const App = () => {
   const channelRef = React.useRef(null);
 
   React.useEffect(() => {
-    // Инициализация канала связи между вкладками
     channelRef.current = new BroadcastChannel('tysiacha-tab-sync');
     const channel = channelRef.current;
-    
     let isChecking = true;
-
-    // Таймер, который определит, является ли эта вкладка главной, если никто не ответит
     const electionTimeout = setTimeout(() => {
       if (isChecking) {
         isChecking = false;
         setTabStatus('PRIMARY');
       }
-    }, 250); // Даем другим вкладкам четверть секунды на ответ
+    }, 250);
 
     channel.onmessage = (event) => {
-      // Если мы получили сообщение 'PONG', значит, главная вкладка уже есть.
-      // Эта вкладка становится заблокированной.
       if (event.data === 'PONG' && isChecking) {
         isChecking = false;
         clearTimeout(electionTimeout);
         setTabStatus('BLOCKED');
       }
-      // Если мы уже главная вкладка, отвечаем на 'PING' от новых вкладок
       if (event.data === 'PING' && tabStatus === 'PRIMARY') {
         channel.postMessage('PONG');
       }
     };
-
-    // Отправляем 'PING', чтобы найти другие активные вкладки
     channel.postMessage('PING');
-
     return () => {
       clearTimeout(electionTimeout);
-      if (channel) {
-        channel.close();
-      }
+      if (channel) channel.close();
     };
-  }, [tabStatus]); // Перезапускаем логику, если статус изменился (например, главная вкладка стала отвечать)
+  }, [tabStatus]);
 
 
-  const handleStartGame = React.useCallback((roomCode, playerName) => {
-    setGameProps({ roomCode, playerName });
+  const handleStartGame = React.useCallback((roomCode, playerName, mode) => {
+    setGameProps({ roomCode, playerName, initialMode: mode });
     setScreen('GAME');
   }, []);
   
@@ -72,38 +60,38 @@ const App = () => {
     const urlParams = new URLSearchParams(window.location.search);
     const roomCodeFromUrl = urlParams.get('room');
 
-    // Case 1: Joining via URL
+    // Try to retrieve previous session info
+    const savedSessionStr = localStorage.getItem('tysiacha-session');
+    let savedSession = {};
+    try { savedSession = JSON.parse(savedSessionStr); } catch(e){}
+
     if (roomCodeFromUrl) {
-      // Clean up the URL immediately to prevent issues on refresh
       window.history.replaceState({}, document.title, window.location.pathname);
-      
       const savedPlayerName = localStorage.getItem('tysiacha-playerName');
-      
-      // Always clear a full session when joining from a link to prevent conflicts
       localStorage.removeItem('tysiacha-session');
 
       if (savedPlayerName) {
-        // Player name exists, bypass lobby and go straight to the game
-        handleStartGame(roomCodeFromUrl.toUpperCase(), savedPlayerName);
+        // If we are reloading and we were the host (create mode) for this room,
+        // we must restart in 'create' mode to reclaim the ID.
+        if (savedSession && savedSession.roomCode === roomCodeFromUrl.toUpperCase() && savedSession.mode === 'create') {
+             handleStartGame(roomCodeFromUrl.toUpperCase(), savedPlayerName, 'create');
+        } else {
+             // Otherwise assume we are joining
+             handleStartGame(roomCodeFromUrl.toUpperCase(), savedPlayerName, 'join');
+        }
       } else {
-        // No player name, go to lobby with pre-filled room code
-        setGameProps({}); // Ensure no old game props are lingering
+        setGameProps({});
         setScreen('LOBBY');
         setInitialRoomCode(roomCodeFromUrl.toUpperCase());
       }
-      return; // Stop further processing
+      return; 
     }
     
-    // Case 2: Resuming a previous session (no room in URL)
-    try {
-        const savedSession = localStorage.getItem('tysiacha-session');
-        if (savedSession) {
-            const { roomCode, playerName } = JSON.parse(savedSession);
-            handleStartGame(roomCode, playerName);
-        }
-    } catch(e) {
-        console.error("Failed to load session:", e);
-        localStorage.removeItem('tysiacha-session');
+    if (savedSession && savedSession.roomCode) {
+        const { roomCode, playerName, mode } = savedSession;
+        // Default to 'join' if mode missing, but prefer saved mode
+        const restoredMode = mode || 'join'; 
+        handleStartGame(roomCode, playerName, restoredMode);
     }
   }, [tabStatus, handleStartGame]);
 
@@ -111,7 +99,7 @@ const App = () => {
     localStorage.removeItem('tysiacha-session');
     setGameProps({});
     setScreen('LOBBY');
-    setInitialRoomCode(null); // Reset initial code on exit
+    setInitialRoomCode(null); 
   }, []);
 
   const renderScreen = () => {
