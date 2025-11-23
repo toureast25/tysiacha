@@ -1,7 +1,5 @@
 
-
-
-const CACHE_NAME = 'tysiacha-cache-v1.0.20'; // Increment cache version
+const CACHE_NAME = 'tysiacha-cache-v1.0.23'; // Increment cache version
 const urlsToCache = [
   '.', // Кэшируем корневую директорию (эквивалент '/')
   'index.html',
@@ -11,7 +9,7 @@ const urlsToCache = [
   'constants.js',
   'utils/gameLogic.js',
   'utils/mqttUtils.js', 
-  'utils/config.js', // Добавлен конфиг файл
+  'utils/config.js',
   'components/App.js',
   'components/Lobby.js',
   'components/Game.js',
@@ -20,7 +18,9 @@ const urlsToCache = [
   'components/RulesModal.js',
   'components/SpectatorsModal.js',
   'components/KickConfirmModal.js',
-  'components/PlayerContextMenu.js'
+  'components/PlayerContextMenu.js',
+  'components/hooks/useGameEngine.js',
+  'components/hooks/useMqtt.js'
 ];
 
 self.addEventListener('install', event => {

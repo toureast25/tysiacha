@@ -1,0 +1,197 @@
+
+import React from 'react';
+import { createMqttClient, getRoomTopic } from '../../utils/mqttUtils.js';
+import { createInitialState } from '../../utils/gameLogic.js';
+
+export const useMqtt = ({ 
+    roomCode, 
+    initialMode, 
+    playerName, 
+    isLocalMode, 
+    isHost, 
+    setIsHost, 
+    mySessionId, 
+    dispatch, 
+    gameStateRef 
+}) => {
+    const [connectionStatus, setConnectionStatus] = React.useState(isLocalMode ? 'connected' : 'connecting');
+    const clientRef = React.useRef(null);
+    const roomTopicRef = React.useRef(getRoomTopic(roomCode || 'LOCAL'));
+    const isCleanedUp = React.useRef(false);
+
+    React.useEffect(() => {
+        if (isLocalMode) return; // SKIP MQTT FOR LOCAL GAME
+
+        isCleanedUp.current = false;
+        setConnectionStatus('connecting');
+
+        let client;
+        try {
+            client = createMqttClient(mySessionId);
+            clientRef.current = client;
+        } catch (e) {
+            setConnectionStatus('error');
+            return;
+        }
+        
+        // Timeout safety for connection hanging
+        const connectionTimeout = setTimeout(() => {
+            if (client && !client.connected && !isCleanedUp.current) {
+                console.warn('MQTT Connection Timed Out');
+                setConnectionStatus('error');
+                client.end(true); // Force end
+            }
+        }, 30000); 
+
+        client.on('connect', () => {
+            if (isCleanedUp.current) {
+                client.end(true); 
+                return;
+            }
+
+            clearTimeout(connectionTimeout);
+            console.log('MQTT Connected');
+            setConnectionStatus('connected');
+            
+            client.subscribe(roomTopicRef.current, { qos: 1 }, (err) => {
+                if (isCleanedUp.current) return;
+                if (err) {
+                    if (err.message === 'client disconnecting') return;
+                    console.error('Sub error:', err);
+                } else {
+                    // После подписки, если мы хост - инициализируем стейт
+                    if (initialMode === 'create') {
+                        setIsHost(true);
+                        const savedState = localStorage.getItem(`tysiacha-state-${roomCode}`);
+                        let initialState;
+                        if (savedState) {
+                            try { initialState = JSON.parse(savedState); } catch (e) { initialState = createInitialState(); }
+                        } else {
+                            initialState = createInitialState();
+                            initialState.hostId = 0;
+                            initialState.players[0] = { 
+                                ...initialState.players[0], 
+                                name: playerName, 
+                                isClaimed: true, 
+                                sessionId: mySessionId, 
+                                status: 'online' 
+                            };
+                            initialState.gameMessage = `${playerName} создал(а) игру.`;
+                        }
+                        dispatch({ type: 'SET_STATE', payload: initialState });
+                        // Broadcast immediate state
+                        client.publish(roomTopicRef.current, JSON.stringify({ type: 'SET_STATE', payload: initialState, senderId: mySessionId }));
+                    } else {
+                        // Если мы клиент - просим пустить нас
+                        client.publish(roomTopicRef.current, JSON.stringify({ type: 'PLAYER_JOIN', payload: { playerName, sessionId: mySessionId }, senderId: mySessionId }));
+                        // FORCE REQUEST STATE to avoid infinite loading on rejoin
+                        client.publish(roomTopicRef.current, JSON.stringify({ type: 'REQUEST_STATE', senderId: mySessionId }));
+                    }
+                }
+            });
+        });
+
+        client.on('message', (topic, message) => {
+            if (isCleanedUp.current) return;
+            if (topic !== roomTopicRef.current) return;
+
+            try {
+                const data = JSON.parse(message.toString());
+                
+                // Игнорируем свои собственные сообщения (эхо)
+                if (data.senderId === mySessionId) return;
+
+                if (data.type === 'PING_HOST') {
+                    if (isHost) {
+                        // Кто-то проверяет комнату. Отвечаем.
+                        client.publish(roomTopicRef.current, JSON.stringify({ type: 'PONG_HOST', senderId: mySessionId }));
+                    }
+                    return;
+                }
+
+                // ОБРАБОТКА REQUEST_STATE (Используем Ref, т.к. gameState в замыкании может быть старым)
+                if (data.type === 'REQUEST_STATE') {
+                    if (isHost && gameStateRef.current) {
+                        client.publish(roomTopicRef.current, JSON.stringify({ type: 'SET_STATE', payload: gameStateRef.current, senderId: mySessionId }));
+                    }
+                    return;
+                }
+
+                // Обработка для Хоста: действия игроков
+                if (isHost) {
+                    if (data.type !== 'SET_STATE') {
+                        dispatch({ ...data, _senderId: data.senderId });
+                    }
+                }
+
+                // Обработка для Всех: получение стейта
+                if (data.type === 'SET_STATE') {
+                    const remoteState = data.payload;
+                    
+                    if (!isHost) {
+                        // Клиент просто обновляется
+                        dispatch({ type: 'SET_STATE', payload: remoteState });
+                    } else {
+                        // === SPLIT-BRAIN RESOLUTION ===
+                        if (data.senderId !== mySessionId) {
+                            console.warn('Host Collision: Two hosts detected!');
+                            
+                            const myPlayerCount = gameStateRef.current ? gameStateRef.current.players.filter(p => p.isClaimed).length : 0;
+                            const remotePlayerCount = remoteState ? remoteState.players.filter(p => p.isClaimed).length : 0;
+                            
+                            let shouldYield = false;
+                            
+                            if (remotePlayerCount > myPlayerCount) {
+                                shouldYield = true;
+                            } else if (remotePlayerCount === myPlayerCount) {
+                                // Лексикографическое сравнение ID для детерминированного выбора
+                                if (data.senderId < mySessionId) {
+                                    shouldYield = true;
+                                }
+                            }
+                            
+                            if (shouldYield) {
+                                console.log('Downgrading to Client (Conflict Resolution)');
+                                setIsHost(false);
+                                dispatch({ type: 'SET_STATE', payload: remoteState });
+                            } else {
+                                console.log('Staying Host (Conflict Resolution). Expecting other to yield.');
+                            }
+                        }
+                    }
+                }
+
+            } catch (e) { console.error('Msg Parse Error', e); }
+        });
+
+        client.on('error', (err) => {
+            console.error('MQTT Error', err);
+        });
+
+        client.on('offline', () => {
+            console.log('MQTT Offline');
+            if (!isCleanedUp.current && connectionStatus === 'connected') setConnectionStatus('reconnecting');
+        });
+
+        return () => {
+            isCleanedUp.current = true;
+            clearTimeout(connectionTimeout);
+            if (client) client.end(true); // Force end
+        };
+    }, [roomCode, initialMode, playerName, isHost, isLocalMode]);
+
+    // --- HOST BROADCAST EFFECT ---
+    // Вынесли этот эффект тоже сюда, так как он относится к отправке данных
+    React.useEffect(() => {
+        if (isLocalMode) return;
+
+        // Внимание: мы используем gameStateRef для чтения, но зависим от изменения состояния извне (через пропсы или логику Game.js)
+        // Но здесь мы не имеем прямого доступа к триггеру изменения.
+        // Поэтому этот Effect лучше оставить в Game.js, либо передавать gameState явно в useMqtt.
+        // В текущей реализации мы будем передавать gameState в useMqtt аргументах? 
+        // Нет, лучше оставить broadcast в Game.js, так как он реактивен к gameState.
+        // Или добавить сюда:
+    }, []); 
+
+    return { clientRef, connectionStatus, roomTopicRef };
+};
