@@ -4,6 +4,8 @@ import { calculateTotalScore, getPlayerBarrelStatus } from '../utils/gameLogic.j
 import RulesModal from './RulesModal.js';
 import SpectatorsModal from './SpectatorsModal.js';
 import KickConfirmModal from './KickConfirmModal.js';
+import PromoteConfirmModal from './PromoteConfirmModal.js';
+import HostLeaveWarningModal from './HostLeaveWarningModal.js'; // Import new modal
 import PlayerContextMenu from './PlayerContextMenu.js';
 import { DiceIcon, SmallDiceIcon } from './Dice.js';
 
@@ -67,7 +69,10 @@ const GameUI = (props) => {
         availableSlotsForJoin,
         currentPlayer,
         kickConfirmState,
+        promoteConfirmState,
+        showHostBlockModal, // New prop
         onLeaveGame,
+        onCloseHostBlockModal, // New prop
         onSetShowRules,
         onSetIsSpectatorsModalOpen,
         onSetIsScoreboardExpanded,
@@ -86,6 +91,9 @@ const GameUI = (props) => {
         onInitiateKick,
         onConfirmKick,
         onCancelKick,
+        onInitiatePromote,
+        onConfirmPromote,
+        onCancelPromote,
     } = props;
 
     const [isLinkCopied, setIsLinkCopied] = React.useState(false);
@@ -126,6 +134,8 @@ const GameUI = (props) => {
         setContextMenu({ isOpen: false, player: null, x: 0, y: 0 }); // Close menu first
         if (action === 'kick') {
             onInitiateKick(player);
+        } else if (action === 'promote') {
+            onInitiatePromote(player);
         }
     };
 
@@ -136,6 +146,8 @@ const GameUI = (props) => {
         showRules && React.createElement(RulesModal, { onClose: () => onSetShowRules(false) }),
         isSpectatorsModalOpen && React.createElement(SpectatorsModal, { spectators: gameState.spectators, onClose: () => onSetIsSpectatorsModalOpen(false) }),
         kickConfirmState.isOpen && React.createElement(KickConfirmModal, { playerToKick: kickConfirmState.player, onConfirm: onConfirmKick, onCancel: onCancelKick }),
+        promoteConfirmState?.isOpen && React.createElement(PromoteConfirmModal, { player: promoteConfirmState.player, onConfirm: onConfirmPromote, onCancel: onCancelPromote }),
+        showHostBlockModal && React.createElement(HostLeaveWarningModal, { onClose: onCloseHostBlockModal }), // Render block modal
         contextMenu.isOpen && React.createElement(PlayerContextMenu, {
             player: contextMenu.player,
             position: { x: contextMenu.x, y: contextMenu.y },
@@ -196,20 +208,20 @@ const GameUI = (props) => {
                         const isUnclaimedAndEmpty = !player.isClaimed && player.name === `Игрок ${player.id + 1}`;
                         const barrelStatus = getPlayerBarrelStatus(player);
                         const isHostPlayer = player.id === gameState.hostId;
-                        const isKickable = isHost && player.isClaimed && player.id !== myPlayerId;
+                        const isActionable = isHost && player.isClaimed && player.id !== myPlayerId;
                 
                         let headerClasses = `h-14 sm:h-16 px-0 py-0 text-center align-middle transition-all duration-300 relative border-r border-slate-600 last:border-r-0 ${index === gameState.currentPlayerIndex && gameState.isGameStarted && !gameState.isGameOver && player.isClaimed ? 'bg-highlight text-slate-900' : 'bg-slate-700/50'}`;
-                        if (isKickable) {
-                            headerClasses += ' cursor-pointer hover:bg-red-800/60';
+                        if (isActionable) {
+                            headerClasses += ' cursor-pointer hover:bg-slate-600/60';
                         }
                         
                         return React.createElement('th', { 
                             key: `player-header-${player.id}`, 
                             scope: "col", 
                             className: headerClasses,
-                            onClick: isKickable ? (e) => handlePlayerHeaderClick(e, player) : undefined,
-                            onContextMenu: isKickable ? (e) => handlePlayerHeaderClick(e, player) : undefined,
-                            title: isKickable ? `Действия для игрока ${player.name}` : ''
+                            onClick: isActionable ? (e) => handlePlayerHeaderClick(e, player) : undefined,
+                            onContextMenu: isActionable ? (e) => handlePlayerHeaderClick(e, player) : undefined,
+                            title: isActionable ? `Действия для игрока ${player.name}` : ''
                         },
                           isUnclaimedAndEmpty
                             ? React.createElement('div', { className: "flex flex-col items-center justify-center h-full py-2 text-gray-500" },

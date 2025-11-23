@@ -40,7 +40,7 @@ const PlayerContextMenu = ({ player, position, onClose, onAction }) => {
     'div',
     {
       ref: menuRef,
-      className: "fixed z-50 w-48 bg-slate-700 border border-slate-600 rounded-md shadow-lg py-1",
+      className: "fixed z-50 w-56 bg-slate-700 border border-slate-600 rounded-md shadow-lg py-1 flex flex-col",
       style: { top: `${menuPosition.y}px`, left: `${menuPosition.x}px` },
       role: "menu",
       'aria-orientation': "vertical",
@@ -49,8 +49,20 @@ const PlayerContextMenu = ({ player, position, onClose, onAction }) => {
     React.createElement(
       'button',
       {
+        onClick: () => onAction('promote', player),
+        className: "w-full text-left px-4 py-3 text-sm text-yellow-400 hover:bg-slate-600 hover:text-yellow-300 flex items-center gap-3 border-b border-slate-600 last:border-0 transition-colors",
+        role: "menuitem"
+      },
+      React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "h-5 w-5", viewBox: "0 0 20 20", fill: "currentColor" },
+        React.createElement('path', { d: "M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" })
+      ),
+      'Назначить хостом'
+    ),
+    React.createElement(
+      'button',
+      {
         onClick: () => onAction('kick', player),
-        className: "w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-slate-600 hover:text-red-300 flex items-center gap-3",
+        className: "w-full text-left px-4 py-3 text-sm text-red-400 hover:bg-slate-600 hover:text-red-300 flex items-center gap-3 transition-colors",
         role: "menuitem"
       },
       React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "h-5 w-5", viewBox: "0 0 20 20", fill: "currentColor" },
