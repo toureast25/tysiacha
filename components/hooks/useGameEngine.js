@@ -370,6 +370,18 @@ function gameReducer(state, action) {
         }
         return { ...newState, players: newPlayers, currentPlayerIndex: newCurrentPlayerIndex, gameMessage: `${playerToKick.name} был исключен.` };
     }
+    
+    case 'PROMOTE_TO_HOST': {
+        const { playerId } = action.payload;
+        const newHost = newState.players.find(p => p.id === playerId);
+        if (!newHost || !newHost.isClaimed) return state;
+
+        return {
+            ...newState,
+            hostId: playerId,
+            gameMessage: `Права хоста переданы игроку ${newHost.name}.`
+        };
+    }
 
     default:
       return state;

@@ -74,12 +74,18 @@ const Game = ({ roomCode, playerName, initialMode, localConfig, onExit }) => {
     }
   }, [gameState, isLocalMode]);
 
-  // --- HOST MIGRATION (CLIENT SIDE) ---
+  // --- HOST MIGRATION & PROMOTION (CLIENT SIDE) ---
   React.useEffect(() => {
     if (!isLocalMode && gameState && !isSpectator) {
+         // Получение прав хоста (если сервер/другой хост сказал, что теперь я главный)
          if (gameState.hostId === myPlayerId && !isHost) {
              console.log('[Game] Promoted to HOST via migration');
              setIsHost(true);
+         }
+         // Потеря прав хоста (если я отдал права кому-то другому)
+         if (isHost && gameState.hostId !== myPlayerId) {
+             console.log('[Game] Demoted from HOST (rights transferred)');
+             setIsHost(false);
          }
     }
   }, [gameState, myPlayerId, isHost, isLocalMode, isSpectator]);
@@ -115,6 +121,8 @@ const Game = ({ roomCode, playerName, initialMode, localConfig, onExit }) => {
   const [showRules, setShowRules] = React.useState(false);
   const [isDragOver, setIsDragOver] = React.useState(false);
   const [kickConfirmState, setKickConfirmState] = React.useState({ isOpen: false, player: null });
+  const [promoteConfirmState, setPromoteConfirmState] = React.useState({ isOpen: false, player: null });
+  const [showHostBlockModal, setShowHostBlockModal] = React.useState(false); // New state for Host warning
 
   // --- RENDER LOADING/ERROR STATES ---
   if (!gameState) {
@@ -149,6 +157,23 @@ const Game = ({ roomCode, playerName, initialMode, localConfig, onExit }) => {
 
   const isMyTurn = isLocalMode ? true : (myPlayerId === gameState.currentPlayerIndex && !isSpectator);
   
+  const handleLeaveGame = () => { 
+        if (!isLocalMode) {
+             // Проверка: Если я Хост и в игре есть другие люди (не только я), то выйти нельзя
+             const activePlayersCount = gameState.players.filter(p => p.isClaimed && !p.isSpectator).length;
+             if (isHost && activePlayersCount > 1) {
+                 setShowHostBlockModal(true);
+                 return;
+             }
+
+             sendAction({ type: 'PLAYER_LEAVE', payload: { sessionId: mySessionIdRef.current } }); 
+             // Небольшая задержка перед размонтированием, чтобы сообщение успело уйти
+             setTimeout(() => onExit(), 150);
+        } else {
+             onExit(); 
+        }
+    };
+
   const uiProps = {
     roomCode: isLocalMode ? 'LOCAL' : roomCode,
     gameState,
@@ -169,15 +194,10 @@ const Game = ({ roomCode, playerName, initialMode, localConfig, onExit }) => {
     availableSlotsForJoin: isLocalMode ? 0 : gameState.players.filter(p => !p.isClaimed && !p.isSpectator).length,
     currentPlayer: gameState.players[gameState.currentPlayerIndex],
     kickConfirmState,
-    onLeaveGame: () => { 
-        if (!isLocalMode) {
-             sendAction({ type: 'PLAYER_LEAVE', payload: { sessionId: mySessionIdRef.current } }); 
-             // Небольшая задержка перед размонтированием, чтобы сообщение успело уйти
-             setTimeout(() => onExit(), 150);
-        } else {
-             onExit(); 
-        }
-    },
+    promoteConfirmState,
+    showHostBlockModal, // Prop for warning modal
+    onLeaveGame: handleLeaveGame,
+    onCloseHostBlockModal: () => setShowHostBlockModal(false), // Handler to close warning
     onSetShowRules: setShowRules,
     onSetIsSpectatorsModalOpen: setIsSpectatorsModalOpen,
     onSetIsScoreboardExpanded: setIsScoreboardExpanded,
@@ -196,7 +216,7 @@ const Game = ({ roomCode, playerName, initialMode, localConfig, onExit }) => {
     onStartOfficialGame: () => sendAction({ type: 'START_OFFICIAL_GAME' }),
     onJoinGame: () => sendAction({ type: 'PLAYER_JOIN', payload: { playerName, sessionId: mySessionIdRef.current } }),
     onJoinRequest: () => {}, 
-    onToggleDieSelection: (index) => sendAction({ type: 'TOGGLE_DIE_SELECTION', payload: { index } }), // ENSURE sendAction is used
+    onToggleDieSelection: (index) => sendAction({ type: 'TOGGLE_DIE_SELECTION', payload: { index } }), 
     onDragStart: (e, index) => { e.dataTransfer.setData('application/json', JSON.stringify([index])); },
     onDrop: (e) => { 
         e.preventDefault(); 
@@ -207,12 +227,20 @@ const Game = ({ roomCode, playerName, initialMode, localConfig, onExit }) => {
         } catch(e){} 
     },
     onDieDoubleClick: (index) => sendAction({ type: 'KEEP_DICE', payload: { indices: [index] } }),
+    // Kick handlers
     onInitiateKick: (player) => setKickConfirmState({ isOpen: true, player }),
     onConfirmKick: () => {
       if (kickConfirmState.player) sendAction({ type: 'KICK_PLAYER', payload: { playerId: kickConfirmState.player.id } });
       setKickConfirmState({ isOpen: false, player: null });
     },
     onCancelKick: () => setKickConfirmState({ isOpen: false, player: null }),
+    // Promote handlers
+    onInitiatePromote: (player) => setPromoteConfirmState({ isOpen: true, player }),
+    onConfirmPromote: () => {
+      if (promoteConfirmState.player) sendAction({ type: 'PROMOTE_TO_HOST', payload: { playerId: promoteConfirmState.player.id } });
+      setPromoteConfirmState({ isOpen: false, player: null });
+    },
+    onCancelPromote: () => setPromoteConfirmState({ isOpen: false, player: null }),
   };
 
   return React.createElement(GameUI, uiProps);

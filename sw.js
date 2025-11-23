@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'tysiacha-cache-v1.0.26'; // Increment cache version
+const CACHE_NAME = 'tysiacha-cache-v1.0.28'; // Increment cache version
 const urlsToCache = [
   '.', // Кэшируем корневую директорию (эквивалент '/')
   'index.html',
@@ -18,6 +18,8 @@ const urlsToCache = [
   'components/RulesModal.js',
   'components/SpectatorsModal.js',
   'components/KickConfirmModal.js',
+  'components/PromoteConfirmModal.js',
+  'components/HostLeaveWarningModal.js',
   'components/PlayerContextMenu.js',
   'components/hooks/useGameEngine.js',
   'components/hooks/useMqtt.js'
