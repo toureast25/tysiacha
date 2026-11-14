@@ -284,20 +284,63 @@ export class TysiachaRoom extends Server {
     }
 
     // --- HTTP: проверка занятости комнаты (?check=1) для лобби ---
+    // CORS обязателен: лобби на github.io делает fetch на workers.dev
+    // (кросс-домен). Без этих заголовков браузер блокирует чтение ответа,
+    // и это выглядит как «ошибка сети».
+    corsHeaders() {
+        return {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type',
+            'Access-Control-Max-Age': '86400',
+        };
+    }
+
     async onRequest(request) {
+        // Preflight для кросс-доменных fetch из лобби.
+        if (request.method === 'OPTIONS') {
+            return new Response(null, { status: 204, headers: this.corsHeaders() });
+        }
+
         const url = new URL(request.url);
         if (url.searchParams.get('check') === '1') {
             await this.ensureLoaded();
             const claimed = (this.game?.players || []).filter((p) => p.isClaimed);
             const host = (this.game?.players || []).find((p) => p.id === this.game?.hostId);
-            return Response.json({
-                exists: claimed.length > 0,
-                hostName: host?.name || null,
-                playerCount: claimed.length,
-            });
+            return Response.json(
+                {
+                    exists: claimed.length > 0,
+                    hostName: host?.name || null,
+                    playerCount: claimed.length,
+                },
+                { headers: this.corsHeaders() }
+            );
         }
-        return new Response('Tysiacha PartyServer room', { status: 200 });
+        return new Response('Tysiacha PartyServer room', {
+            status: 200,
+            headers: this.corsHeaders(),
+        });
     }
+}
+
+// CORS-заголовки для кросс-доменных fetch из лобби (github.io -> workers.dev).
+// Ставим на финальном ответе воркера: PartyServer пересобирает ответ DO и
+// терял заголовки, выставленные внутри onRequest.
+const CORS_HEADERS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Max-Age': '86400',
+};
+
+function withCors(response) {
+    const headers = new Headers(response.headers);
+    for (const [k, v] of Object.entries(CORS_HEADERS)) headers.set(k, v);
+    return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+    });
 }
 
 // --- Worker entry: маршрутизирует /parties/main/<room> в DO выше. ---
@@ -305,10 +348,14 @@ export class TysiachaRoom extends Server {
 // тогда клиенты ходят на /parties/main/<room> без изменений.
 export default {
     async fetch(request, env, ctx) {
-        return (
-            (await routePartykitRequest(request, { ...env, ctx }, {
-                Main: TysiachaRoom,
-            })) || new Response('Not Found', { status: 404 })
-        );
+        // Preflight для кросс-доменных fetch из лобби — отвечаем на уровне воркера.
+        if (request.method === 'OPTIONS') {
+            return new Response(null, { status: 204, headers: CORS_HEADERS });
+        }
+
+        const response = await routePartykitRequest(request, { ...env, ctx }, {
+            Main: TysiachaRoom,
+        });
+        return withCors(response || new Response('Not Found', { status: 404 }));
     },
 };
