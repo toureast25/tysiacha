@@ -41,7 +41,11 @@ export function gameReducer(state, action) {
              return state;
         }
         if (asSpectator) {
-            return { ...newState, spectators: [...newState.spectators, { name: playerName, id: sessionId }] };
+            // Вытесняем старого зрителя с тем же именем: при новой вкладке /
+            // инкогнито / после очистки sessionStorage клиент получает новый
+            // sessionId, и без этого один человек числился в зрителях дважды.
+            const others = newState.spectators.filter(s => s.name !== playerName);
+            return { ...newState, spectators: [...others, { name: playerName, id: sessionId }] };
         }
 
         // 1. Попытка восстановить игрока по имени (Rejoin Logic / Smart Join)
