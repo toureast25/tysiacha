@@ -1,5 +1,4 @@
-
-const CACHE_NAME = 'tysiacha-cache-v1.0.31'; // Increment cache version
+const CACHE_NAME = 'tysiacha-cache-v1.1.0'; // Increment cache version
 const urlsToCache = [
   '.', // Кэшируем корневую директорию (эквивалент '/')
   'index.html',
@@ -8,7 +7,8 @@ const urlsToCache = [
   'index.js',
   'constants.js',
   'utils/gameLogic.js',
-  'utils/mqttUtils.js', 
+  'utils/gameReducer.js',
+  'utils/roomApi.js',
   'utils/config.js',
   'components/App.js',
   'components/Lobby.js',
@@ -22,7 +22,7 @@ const urlsToCache = [
   'components/HostLeaveWarningModal.js',
   'components/PlayerContextMenu.js',
   'components/hooks/useGameEngine.js',
-  'components/hooks/useMqtt.js'
+  'components/hooks/useRoom.js'
 ];
 
 self.addEventListener('install', event => {
@@ -46,8 +46,8 @@ self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') {
     return;
   }
-  
-  // Игнорируем запросы к сторонним доменам (CDN), чтобы избежать ошибок CORS.
+
+  // Игнорируем запросы к сторонним доменам (CDN, PartyKit), чтобы избежать ошибок CORS.
   const requestUrl = new URL(event.request.url);
   if (requestUrl.origin !== self.location.origin) {
     return; // Позволяем браузеру выполнить запрос напрямую, минуя Service Worker.

@@ -1,13 +1,12 @@
-
 import React from 'react';
 import GameUI from './GameUI.js';
-import { createLocalGameState, findNextHost } from '../utils/gameLogic.js';
+import { createLocalGameState } from '../utils/gameLogic.js';
 import { useGameEngine } from './hooks/useGameEngine.js';
-import { useMqtt } from './hooks/useMqtt.js';
+import { useRoom } from './hooks/useRoom.js';
 
 const Game = ({ roomCode, playerName, initialMode, localConfig, onExit }) => {
   const isLocalMode = initialMode === 'local';
-  
+
   // 1. Prepare Initial State for Hooks
   const initialLocalState = React.useMemo(() => {
       if (isLocalMode) {
@@ -15,29 +14,25 @@ const Game = ({ roomCode, playerName, initialMode, localConfig, onExit }) => {
       }
       return null;
   }, [isLocalMode, localConfig]);
-  
+
   // 2. Init Game Engine Hook
-  const { gameState, dispatch, gameStateRef } = useGameEngine(initialLocalState, isLocalMode, localConfig);
+  // В онлайн-режиме состояние приходит с сервера (SET_STATE); локально — из initialLocalState.
+  const { gameState, dispatch } = useGameEngine(initialLocalState, isLocalMode, localConfig);
 
   // 3. Local Identity State
   const [myPlayerId, setMyPlayerId] = React.useState(null);
   const [isSpectator, setIsSpectator] = React.useState(false);
-  const [isHost, setIsHost] = React.useState(initialMode === 'create' || isLocalMode);
-  
+
   const mySessionIdRef = React.useRef(sessionStorage.getItem('tysiacha-sessionId') || `sid_${Math.random().toString(36).substr(2, 9)}`);
   const wakeLockRef = React.useRef(null);
 
-  // 4. Init Network Hook
-  const { clientRef, connectionStatus, roomTopicRef } = useMqtt({
+  // 4. Init Network Hook (PartyKit room). Сервер — единственный источник истины.
+  const { connectionStatus, sendAction: sendRoomAction, sendLeave } = useRoom({
       roomCode,
-      initialMode,
       playerName,
       isLocalMode,
-      isHost,
-      setIsHost,
       mySessionId: mySessionIdRef.current,
       dispatch,
-      gameStateRef
   });
 
   // --- WAKE LOCK ---
@@ -74,41 +69,14 @@ const Game = ({ roomCode, playerName, initialMode, localConfig, onExit }) => {
     }
   }, [gameState, isLocalMode]);
 
-  // --- HOST MIGRATION & PROMOTION (CLIENT SIDE) ---
-  React.useEffect(() => {
-    if (!isLocalMode && gameState && !isSpectator) {
-         // Получение прав хоста (если сервер/другой хост сказал, что теперь я главный)
-         if (gameState.hostId === myPlayerId && !isHost) {
-             console.log('[Game] Promoted to HOST via migration');
-             setIsHost(true);
-         }
-         // Потеря прав хоста (если я отдал права кому-то другому)
-         if (isHost && gameState.hostId !== myPlayerId) {
-             console.log('[Game] Demoted from HOST (rights transferred)');
-             setIsHost(false);
-         }
-    }
-  }, [gameState, myPlayerId, isHost, isLocalMode, isSpectator]);
-
-  // --- HOST BROADCAST ---
-  // Send state updates to network if we are host
-  React.useEffect(() => {
-      if (isLocalMode) return; 
-
-      if (isHost && gameState && clientRef.current && clientRef.current.connected) {
-          localStorage.setItem(`tysiacha-state-${roomCode}`, JSON.stringify(gameState));
-          clientRef.current.publish(roomTopicRef.current, JSON.stringify({ type: 'SET_STATE', payload: gameState, senderId: mySessionIdRef.current }));
-      }
-  }, [gameState, isHost, roomCode, isLocalMode]);
-
   // --- ACTION HANDLER ---
+  // Локально — сразу в редьюсер. Онлайн — интент на сервер; сервер применит
+  // редьюсер авторитетно и разошлёт снапшот всем (включая нас).
   const sendAction = (action) => {
       if (isLocalMode) {
           dispatch(action);
-      } else if (isHost) {
-          dispatch(action); // Host applies locally, broadcast effect sends it out
-      } else if (clientRef.current && clientRef.current.connected) {
-          clientRef.current.publish(roomTopicRef.current, JSON.stringify({ ...action, senderId: mySessionIdRef.current }));
+      } else {
+          sendRoomAction(action);
       }
   };
 
@@ -122,16 +90,16 @@ const Game = ({ roomCode, playerName, initialMode, localConfig, onExit }) => {
   const [isDragOver, setIsDragOver] = React.useState(false);
   const [kickConfirmState, setKickConfirmState] = React.useState({ isOpen: false, player: null });
   const [promoteConfirmState, setPromoteConfirmState] = React.useState({ isOpen: false, player: null });
-  const [showHostBlockModal, setShowHostBlockModal] = React.useState(false); // New state for Host warning
+  const [showHostBlockModal, setShowHostBlockModal] = React.useState(false);
 
   // --- RENDER LOADING/ERROR STATES ---
   if (!gameState) {
-      return React.createElement('div', { className: "text-center w-full p-8" }, 
-        React.createElement('h2', { className: `font-ruslan text-4xl mb-4 ${connectionStatus === 'error' ? 'text-red-500' : 'text-title-yellow'}` }, 
+      return React.createElement('div', { className: "text-center w-full p-8" },
+        React.createElement('h2', { className: `font-ruslan text-4xl mb-4 ${connectionStatus === 'error' ? 'text-red-500' : 'text-title-yellow'}` },
             connectionStatus === 'error' ? 'Ошибка сети' : (connectionStatus === 'connected' ? 'Синхронизация...' : 'Подключение...')
         ),
         connectionStatus === 'error' && React.createElement('p', { className: "text-lg mb-6 max-w-md mx-auto" }, 'Не удалось подключиться к серверу игры. Попробуйте офлайн режим.'),
-        connectionStatus === 'connected' && React.createElement('p', { className: "text-lg mb-6 max-w-md mx-auto" }, 'Ждем данные от хоста...'),
+        connectionStatus === 'connected' && React.createElement('p', { className: "text-lg mb-6 max-w-md mx-auto" }, 'Ждем данные от сервера...'),
         (connectionStatus === 'connecting' || connectionStatus === 'reconnecting' || connectionStatus === 'connected') && React.createElement('div', { className: "w-8 h-8 border-4 border-t-transparent border-title-yellow rounded-full animate-spin mx-auto" }),
         React.createElement('div', { className: 'flex justify-center gap-4 mt-8' },
             React.createElement('button', { onClick: onExit, className: "px-4 py-2 bg-slate-700 hover:bg-slate-700 rounded" }, "В меню"),
@@ -139,7 +107,7 @@ const Game = ({ roomCode, playerName, initialMode, localConfig, onExit }) => {
         )
       );
   }
-  
+
   // --- RENDER JOIN ERROR (NAME TAKEN) ---
   const joinError = gameState.joinErrors?.[mySessionIdRef.current];
   if (joinError) {
@@ -147,7 +115,7 @@ const Game = ({ roomCode, playerName, initialMode, localConfig, onExit }) => {
           React.createElement('div', { className: "bg-slate-800 p-8 rounded-xl border border-red-500 max-w-md text-center shadow-2xl" },
               React.createElement('h2', { className: "text-3xl font-ruslan text-red-500 mb-4" }, "Ошибка входа"),
               React.createElement('p', { className: "text-white text-lg mb-6" }, joinError),
-              React.createElement('button', { 
+              React.createElement('button', {
                   onClick: onExit,
                   className: "px-6 py-3 bg-slate-600 hover:bg-slate-700 text-white rounded-lg font-bold transition-colors"
               }, "Вернуться в меню")
@@ -156,21 +124,23 @@ const Game = ({ roomCode, playerName, initialMode, localConfig, onExit }) => {
   }
 
   const isMyTurn = isLocalMode ? true : (myPlayerId === gameState.currentPlayerIndex && !isSpectator);
-  
-  const handleLeaveGame = () => { 
+  // «Хост» теперь только про админ-права (старт/новая игра/кик/промоут), а не про авторитет.
+  const isHost = isLocalMode ? true : (myPlayerId !== null && myPlayerId === gameState.hostId);
+
+  const handleLeaveGame = () => {
         if (!isLocalMode) {
-             // Проверка: Если я Хост и в игре есть другие люди (не только я), то выйти нельзя
+             // Если я хост и в игре есть другие люди — выход блокируем (надо передать права).
              const activePlayersCount = gameState.players.filter(p => p.isClaimed && !p.isSpectator).length;
              if (isHost && activePlayersCount > 1) {
                  setShowHostBlockModal(true);
                  return;
              }
 
-             sendAction({ type: 'PLAYER_LEAVE', payload: { sessionId: mySessionIdRef.current } }); 
-             // Небольшая задержка перед размонтированием, чтобы сообщение успело уйти
+             // Явный выход: сервер метит offline и сохраняет слот/очки для перезахода.
+             sendLeave();
              setTimeout(() => onExit(), 150);
         } else {
-             onExit(); 
+             onExit();
         }
     };
 
@@ -180,7 +150,7 @@ const Game = ({ roomCode, playerName, initialMode, localConfig, onExit }) => {
     myPlayerId: isLocalMode ? gameState.currentPlayerIndex : myPlayerId,
     isSpectator,
     isMyTurn,
-    isHost: isHost, 
+    isHost: isHost,
     canJoin: !isLocalMode && myPlayerId === null && !isSpectator,
     isAwaitingApproval: false,
     showRules,
@@ -195,9 +165,9 @@ const Game = ({ roomCode, playerName, initialMode, localConfig, onExit }) => {
     currentPlayer: gameState.players[gameState.currentPlayerIndex],
     kickConfirmState,
     promoteConfirmState,
-    showHostBlockModal, // Prop for warning modal
+    showHostBlockModal,
     onLeaveGame: handleLeaveGame,
-    onCloseHostBlockModal: () => setShowHostBlockModal(false), // Handler to close warning
+    onCloseHostBlockModal: () => setShowHostBlockModal(false),
     onSetShowRules: setShowRules,
     onSetIsSpectatorsModalOpen: setIsSpectatorsModalOpen,
     onSetIsScoreboardExpanded: setIsScoreboardExpanded,
@@ -215,16 +185,16 @@ const Game = ({ roomCode, playerName, initialMode, localConfig, onExit }) => {
     },
     onStartOfficialGame: () => sendAction({ type: 'START_OFFICIAL_GAME' }),
     onJoinGame: () => sendAction({ type: 'PLAYER_JOIN', payload: { playerName, sessionId: mySessionIdRef.current } }),
-    onJoinRequest: () => {}, 
-    onToggleDieSelection: (index) => sendAction({ type: 'TOGGLE_DIE_SELECTION', payload: { index } }), 
+    onJoinRequest: () => {},
+    onToggleDieSelection: (index) => sendAction({ type: 'TOGGLE_DIE_SELECTION', payload: { index } }),
     onDragStart: (e, index) => { e.dataTransfer.setData('application/json', JSON.stringify([index])); },
-    onDrop: (e) => { 
-        e.preventDefault(); 
+    onDrop: (e) => {
+        e.preventDefault();
         setIsDragOver(false);
-        try { 
+        try {
             const indices = JSON.parse(e.dataTransfer.getData('application/json'));
             sendAction({ type: 'KEEP_DICE', payload: { indices } });
-        } catch(e){} 
+        } catch(e){}
     },
     onDieDoubleClick: (index) => sendAction({ type: 'KEEP_DICE', payload: { indices: [index] } }),
     // Kick handlers

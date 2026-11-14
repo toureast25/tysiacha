@@ -29,3 +29,9 @@ dist-ssr
 .ai-dist
 .ai-cache
 .ai-temp
+
+# Local deploy state / secrets — NEVER commit
+.partykit
+.wrangler
+.env
+.env.*

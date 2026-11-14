@@ -1,0 +1,29 @@
+{
+  // PartyServer-воркер «Тысяча» — авторитарный сервер комнат.
+  // Деплой: npx wrangler login && npx wrangler deploy
+  // Локально: npx wrangler dev
+  "name": "tysiacha",
+  "main": "party/server.js",
+  "compatibility_date": "2026-11-14",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Одна Durable Object-комната на класс TysiachaRoom.
+  // Binding называется "Main" => routePartykitRequest обслуживает /parties/main/<room>.
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "Main",
+        "class_name": "TysiachaRoom"
+      }
+    ]
+  },
+
+  // SQLite-бэкенд DO (бесплатный тариф Workers его включает).
+  // Каждое добавление/переименование/удаление класса DO = новая запись в migrations.
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["TysiachaRoom"]
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { checkRoomAvailability } from '../utils/mqttUtils.js';
+import { checkRoomAvailability } from '../utils/roomApi.js';
 
 const Lobby = ({ onStartGame, initialRoomCode }) => {
   const [roomCode, setRoomCode] = React.useState('');

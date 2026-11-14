@@ -1,12 +1,15 @@
+// Конфигурация подключения к PartyServer-комнате.
+//
+// Хост сервера комнат задаётся через переменную окружения при сборке:
+//   VITE_PARTYKIT_HOST=<имя-воркера>.<ваш-аккаунт>.workers.dev
+// (см. DEPLOY.md). Секретов здесь нет — авторитетный сервер хранит всё своё
+// состояние сам, браузеру нужен только публичный адрес комнаты.
 
-// Конфигурация подключения к MQTT брокеру (HiveMQ Cloud)
-// ВАЖНО: Заполните поля username и password данными из вашей панели управления HiveMQ Cluster -> Access Management.
-
-export const mqttConfig = {
-    host: 'b862a42614b74f94be92c8fb39d4736f.s1.eu.hivemq.cloud',
-    port: 8884,
-    path: '/mqtt',
-    protocol: 'wss',
-    username: '[REDACTED-HIVEMQ-USER]', // Вставьте сюда имя пользователя (Cluster credentials)
-    password: '[REDACTED-HIVEMQ-PASS]'  // Вставьте сюда пароль
+export const partykitConfig = {
+    // Публичный хост PartyServer-воркера (без схемы).
+    // GitHub Pages раздаёт исходники напрямую (importmap + CDN), где
+    // import.meta.env не определён, поэтому fallback = реальный задеплоенный хост.
+    host: (import.meta.env && import.meta.env.VITE_PARTYKIT_HOST)
+        || 'tysiacha.tysiacha.workers.dev',
+    useTls: true,
 };
