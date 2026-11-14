@@ -341,12 +341,19 @@ const GameUI = (props) => {
                   isAwaitingApproval
                     ? React.createElement(AwaitingApprovalScreen, null)
                     : canJoin
-                      ? React.createElement('button', { 
-                          onClick: onJoinGame, 
-                          disabled: availableSlotsForJoin === 0, 
-                          className: "w-full py-5 sm:py-4 bg-green-600 hover:bg-green-700 rounded-lg text-2xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed disabled:scale-100" 
-                        }, 
-                          availableSlotsForJoin > 0 ? `Войти в игру (${availableSlotsForJoin} мест)` : 'Нет свободных мест'
+                      ? React.createElement(React.Fragment, null,
+                          React.createElement('p', { className: "text-center text-gray-400 text-sm mb-2" },
+                            availableSlotsForJoin > 0
+                              ? 'Вы зритель. Нажмите, чтобы попроситься в игру — админ одобрит.'
+                              : 'Свободных мест сейчас нет.'
+                          ),
+                          React.createElement('button', { 
+                            onClick: onJoinGame, 
+                            disabled: availableSlotsForJoin === 0, 
+                            className: "w-full py-5 sm:py-4 bg-green-600 hover:bg-green-700 rounded-lg text-2xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed disabled:scale-100" 
+                          }, 
+                            availableSlotsForJoin > 0 ? 'Попроситься в игру' : 'Нет свободных мест'
+                          )
                         )
                       : gameState.isGameOver
                         ? (isHost
