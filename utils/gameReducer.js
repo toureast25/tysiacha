@@ -386,6 +386,62 @@ export function gameReducer(state, action) {
         };
     }
 
+    // --- Зритель просится в игру (одобряет админ/хост) ---
+    case 'REQUEST_JOIN': {
+        const { sessionId } = action.payload;
+        const spec = newState.spectators.find(s => s.id === sessionId);
+        if (!spec) return state; // это не зритель
+        if ((newState.joinRequests || []).some(r => r.sessionId === sessionId)) return state; // уже просился
+        return {
+            ...newState,
+            joinRequests: [...(newState.joinRequests || []), { sessionId, name: spec.name, requestedAt: Date.now() }],
+            gameMessage: `${spec.name} просится в игру.`
+        };
+    }
+
+    // --- Админ одобряет вступление зрителя ---
+    case 'APPROVE_JOIN': {
+        const { sessionId } = action.payload;
+        const spec = newState.spectators.find(s => s.id === sessionId);
+        if (!spec) return state;
+        const joinIndex = newState.players.findIndex(p => !p.isClaimed);
+        if (joinIndex === -1) {
+            return {
+                ...newState,
+                joinErrors: { ...(newState.joinErrors || {}), [sessionId]: 'Нет свободных мест' }
+            };
+        }
+        const restoredScore = newState.leavers?.[spec.name] || 0;
+        const newLeavers = { ...newState.leavers };
+        if (restoredScore > 0) delete newLeavers[spec.name];
+        const newPlayers = newState.players.map((p, i) =>
+            i === joinIndex
+                ? { ...createInitialState().players[0], id: p.id, name: spec.name, isClaimed: true, status: 'online', sessionId, hasEnteredGame: restoredScore > 0, scores: restoredScore > 0 ? [restoredScore] : [], lastSeen: Date.now() }
+                : p
+        );
+        return {
+            ...newState,
+            players: newPlayers,
+            spectators: newState.spectators.filter(s => s.id !== sessionId),
+            joinRequests: (newState.joinRequests || []).filter(r => r.sessionId !== sessionId),
+            leavers: newLeavers,
+            gameMessage: `${spec.name} вступает в игру.`
+        };
+    }
+
+    // --- Админ отклоняет запрос зрителя ---
+    case 'REJECT_JOIN': {
+        const { sessionId } = action.payload;
+        const req = (newState.joinRequests || []).find(r => r.sessionId === sessionId);
+        if (!req) return state;
+        return {
+            ...newState,
+            joinRequests: (newState.joinRequests || []).filter(r => r.sessionId !== sessionId),
+            joinErrors: { ...(newState.joinErrors || {}), [sessionId]: 'Админ отклонил запрос на вступление' },
+            gameMessage: `Запрос ${req.name} на вступление отклонён.`
+        };
+    }
+
     default:
       return state;
   }

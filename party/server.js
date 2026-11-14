@@ -43,6 +43,8 @@ const ADMIN_ACTIONS = new Set([
     'NEW_GAME',
     'KICK_PLAYER',
     'PROMOTE_TO_HOST',
+    'APPROVE_JOIN',
+    'REJECT_JOIN',
 ]);
 
 export class TysiachaRoom extends Server {
@@ -199,12 +201,25 @@ export class TysiachaRoom extends Server {
                 if (!sessionId) return;
                 this.connSession.set(connection.id, sessionId);
                 this.touch(sessionId);
+
+                // Логика зрителя: если партия УЖЕ начата, новый участник входит
+                // зрителем по умолчанию (и дальше просится в игру через одобрение).
+                // Реконнект уже играющего (тот же sessionId на заявленном слоте)
+                // понижать в зрителей НЕЛЬЗЯ — иначе потеряем его ход/очки.
+                let asSpectator = !!data.asSpectator;
+                const isReconnect = (this.game.players || []).some(
+                    (p) => p.isClaimed && p.sessionId === sessionId
+                );
+                if (!asSpectator && this.game.isGameStarted && !isReconnect) {
+                    asSpectator = true;
+                }
+
                 const action = {
                     type: 'PLAYER_JOIN',
                     payload: {
                         playerName: data.playerName || 'Игрок',
                         sessionId,
-                        asSpectator: !!data.asSpectator,
+                        asSpectator,
                     },
                 };
                 // применяем (если игрок реально изменился) и всегда шлём снапшот этому клиенту
@@ -239,8 +254,40 @@ export class TysiachaRoom extends Server {
                     }
                 }
 
-                // Игрок, чей ход, может слать только свои действия — но редьюсер
-                // сам защищает порядок хода; здесь не дублируем.
+                // Гейт по идентичности. Редьюсер защищает ПОРЯДОК хода, но не
+                // знает, КТО прислал интент — поэтому без этой проверки любой
+                // клиент (зритель, кикнутый, не-текущий игрок) мог кидать кости
+                // и передавать ход. Это blocker: новый игрок теперь по умолчанию
+                // зритель и обязан НЕ иметь возможности мутировать партию.
+                const GAMEPLAY_ACTIONS = new Set([
+                    'ROLL_DICE',
+                    'TOGGLE_DIE_SELECTION',
+                    'KEEP_DICE',
+                    'BANK_SCORE',
+                    'SKIP_TURN',
+                ]);
+                if (GAMEPLAY_ACTIONS.has(actionType)) {
+                    const cur = this.game.players[this.game.currentPlayerIndex];
+                    const isCurrent =
+                        cur && cur.isClaimed && !cur.isSpectator && cur.sessionId === sessionId;
+                    if (!isCurrent) {
+                        try {
+                            connection.send(JSON.stringify({
+                                type: 'ERROR',
+                                error: 'Сейчас не ваш ход',
+                                sessionId,
+                            }));
+                        } catch (e) { /* ignore */ }
+                        return;
+                    }
+                }
+
+                // Запрос на вступление в игру — только от зрителя.
+                if (actionType === 'REQUEST_JOIN') {
+                    const isSpec = (this.game.spectators || []).some((s) => s.id === sessionId);
+                    if (!isSpec) return;
+                }
+
                 this.applyAction(data.action);
                 break;
             }

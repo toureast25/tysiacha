@@ -152,8 +152,11 @@ const Game = ({ roomCode, playerName, initialMode, localConfig, asSpectator = fa
     isSpectator,
     isMyTurn,
     isHost: isHost,
-    canJoin: !isLocalMode && myPlayerId === null && !isSpectator,
-    isAwaitingApproval: false,
+    // Зритель (или незанятый) может ЗАПРОСИТЬся в игру, пока не запросил.
+    canJoin: !isLocalMode && myPlayerId === null &&
+             !(gameState.joinRequests || []).some(r => r.sessionId === mySessionIdRef.current),
+    isAwaitingApproval: !isLocalMode && myPlayerId === null &&
+             (gameState.joinRequests || []).some(r => r.sessionId === mySessionIdRef.current),
     showRules,
     isSpectatorsModalOpen,
     isScoreboardExpanded,
@@ -185,8 +188,14 @@ const Game = ({ roomCode, playerName, initialMode, localConfig, asSpectator = fa
         }
     },
     onStartOfficialGame: () => sendAction({ type: 'START_OFFICIAL_GAME' }),
-    onJoinGame: () => sendAction({ type: 'PLAYER_JOIN', payload: { playerName, sessionId: mySessionIdRef.current } }),
-    onJoinRequest: () => {},
+    // Зритель НЕ занимает слот сам — он просится в игру, одобряет админ.
+    onJoinGame: () => sendAction({ type: 'REQUEST_JOIN', payload: { sessionId: mySessionIdRef.current } }),
+    // Админ (хост) принимает/отклоняет запрос зрителя.
+    onJoinRequest: (sessionId, approve) => sendAction(
+        approve
+            ? { type: 'APPROVE_JOIN', payload: { sessionId } }
+            : { type: 'REJECT_JOIN', payload: { sessionId } }
+    ),
     onToggleDieSelection: (index) => sendAction({ type: 'TOGGLE_DIE_SELECTION', payload: { index } }),
     onDragStart: (e, index) => { e.dataTransfer.setData('application/json', JSON.stringify([index])); },
     onDrop: (e) => {
