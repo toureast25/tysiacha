@@ -37,9 +37,19 @@ export function gameReducer(state, action) {
   switch (action.type) {
     case 'PLAYER_JOIN': {
         const { playerName, sessionId, asSpectator } = action.payload;
-        if (newState.players.some(p => p.sessionId === sessionId) || newState.spectators.some(s => s.id === sessionId)) {
-             return state;
+        // Возврат на свой же слот: переводим в online, иначе после обрыва
+        // игрок оставался offline при живом соединении и sweep снимал его с хода.
+        const ownSlot = newState.players.find(p => p.isClaimed && p.sessionId === sessionId);
+        if (ownSlot) {
+            if (ownSlot.status === 'online') return state;
+            return {
+                ...newState,
+                players: newState.players.map(p =>
+                    p === ownSlot ? { ...p, status: 'online', lastSeen: Date.now() } : p
+                ),
+            };
         }
+        if (newState.spectators.some(s => s.id === sessionId)) return state;
         if (asSpectator) {
             // Вытесняем старого зрителя с тем же именем: при новой вкладке /
             // инкогнито / после очистки sessionStorage клиент получает новый

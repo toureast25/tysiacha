@@ -36,6 +36,8 @@ const STORAGE_KEY = '***';
 const PRESENCE_TICK_MS = 10000;   // как часто sweeping-аларм проверяет presence
 const OFFLINE_AFTER_MS = 45000;   // нет PING дольше — игрок считается offline
 const SEEN_CAP = 5000;            // потолок карты дедупликации интентов
+const MAX_SPECTATORS = 20;        // потолок зрителей: без него флуд соединений раздувает снапшот
+const MAX_JOIN_REQUESTS = 10;     // потолок заявок на вход
 
 // Действия, которые может слать только хост (hostId в состоянии).
 const ADMIN_ACTIONS = new Set([
@@ -45,6 +47,15 @@ const ADMIN_ACTIONS = new Set([
     'PROMOTE_TO_HOST',
     'APPROVE_JOIN',
     'REJECT_JOIN',
+]);
+
+// Действия, которые может слать только текущий игрок.
+const GAMEPLAY_ACTIONS = new Set([
+    'ROLL_DICE',
+    'TOGGLE_DIE_SELECTION',
+    'KEEP_DICE',
+    'BANK_SCORE',
+    'SKIP_TURN',
 ]);
 
 export class TysiachaRoom extends Server {
@@ -67,6 +78,18 @@ export class TysiachaRoom extends Server {
                 try {
                     const stored = await this.ctx.storage.get(STORAGE_KEY);
                     this.game = stored || createInitialState();
+                    // Защита от испорченного снапшота в хранилище: состояние должно
+                    // быть объектом с массивом игроков, иначе комната служит мусором
+                    // всем новым клиентам.
+                    if (!this.game || typeof this.game !== 'object' || !Array.isArray(this.game.players)) {
+                        this.game = createInitialState();
+                    }
+                    // Бэкфилл полей, добавленных после создания комнаты:
+                    // старые снапшоты из DO-хранилища их не содержат.
+                    if (typeof this.game.rollNonce !== 'number') this.game.rollNonce = 0;
+                    if (!Array.isArray(this.game.spectators)) this.game.spectators = [];
+                    if (!Array.isArray(this.game.joinRequests)) this.game.joinRequests = [];
+                    if (typeof this.game.joinErrors !== 'object' || !this.game.joinErrors) this.game.joinErrors = {};
                 } catch (e) {
                     this.game = createInitialState();
                 }
@@ -148,6 +171,25 @@ export class TysiachaRoom extends Server {
                 changed = true;
             }
         }
+        // Зрители: выметаем «призраков» — от кого давно нет PING (закрыли
+        // вкладку без PLAYER_LEAVE). Иначе один человек мог числиться в
+        // зрителях дважды: старый слот висел, новый вход добавлял второй.
+        for (const s of (this.game.spectators || [])) {
+            const last = this.presence.get(s.id);
+            if (!last || now - last > OFFLINE_AFTER_MS) {
+                this.applyAction({ type: 'PLAYER_LEAVE', payload: { sessionId: s.id } });
+                if (last) this.presence.delete(s.id);
+                changed = true;
+            }
+        }
+        // Если ход застрял на offline-игроке — передаём ход. Иначе партия
+        // встаёт навсегда: передать ход может только текущий игрок.
+        const stuckIdx = this.game.currentPlayerIndex;
+        const stuck = (this.game.players || [])[stuckIdx];
+        if (stuck && stuck.isClaimed && stuck.status !== 'online') {
+            this.applyAction({ type: 'SKIP_TURN' });
+            changed = true;
+        }
         return changed;
     }
 
@@ -194,31 +236,62 @@ export class TysiachaRoom extends Server {
         try { data = JSON.parse(message); } catch (e) { return; }
         if (!data || typeof data.type !== 'string') return;
 
-        const sessionId = data.sessionId;
+        // HELLO — единственное сообщение, которое задаёт идентичность.
+        // Всё остальное авторизуется по сессии, привязанной к СОЕДИНЕНИЮ:
+        // sessionId из тела больше не является доверенным (иначе любой сокет
+        // действовал от имени любого игрока, скопировав его sessionId).
+        const connSid = this.connSession.get(connection.id);
+        const bodySid = data.sessionId;
+        const reject = (error) => {
+            try {
+                connection.send(JSON.stringify({ type: 'ERROR', error, sessionId: connSid || bodySid }));
+            } catch (e) { /* ignore */ }
+        };
+
+        if (data.type !== 'HELLO' && !connSid) {
+            reject('Сначала HELLO');
+            return;
+        }
+        if (connSid && bodySid && bodySid !== connSid) {
+            reject('Несоответствие сессии');
+            return;
+        }
+        const sessionId = connSid || bodySid;
 
         switch (data.type) {
             case 'HELLO': {
-                if (!sessionId) return;
-                this.connSession.set(connection.id, sessionId);
-                this.touch(sessionId);
+                if (!bodySid) return;
+                this.connSession.set(connection.id, bodySid);
+                this.touch(bodySid);
 
-                // Логика зрителя: если партия УЖЕ начата, новый участник входит
-                // зрителем по умолчанию (и дальше просится в игру через одобрение).
-                // Реконнект уже играющего (тот же sessionId на заявленном слоте)
-                // понижать в зрителей НЕЛЬЗЯ — иначе потеряем его ход/очки.
-                let asSpectator = !!data.asSpectator;
-                const isReconnect = (this.game.players || []).some(
-                    (p) => p.isClaimed && p.sessionId === sessionId
+                // Зритель/игрок решается на сервере:
+                //  - вернувшийся игрок (его sessionId стоит на заявленном слоте)
+                //    остаётся игроком, даже если клиент прислал asSpectator — иначе
+                //    после реконнекта одобренный игрок откатывался в зрители;
+                //  - новый участник в начатой партии — зритель;
+                //  - в лобби — как прислал клиент.
+                const reconnectSlot = (this.game.players || []).some(
+                    (p) => p.isClaimed && p.sessionId === bodySid
                 );
-                if (!asSpectator && this.game.isGameStarted && !isReconnect) {
-                    asSpectator = true;
+                let asSpectator;
+                if (reconnectSlot) asSpectator = false;
+                else if (this.game.isGameStarted) asSpectator = true;
+                else asSpectator = !!data.asSpectator;
+
+                if (asSpectator) {
+                    const specs = this.game.spectators || [];
+                    const already = specs.some((s) => s.id === bodySid);
+                    if (!already && specs.length >= MAX_SPECTATORS) {
+                        reject('Комната переполнена зрителями');
+                        return;
+                    }
                 }
 
                 const action = {
                     type: 'PLAYER_JOIN',
                     payload: {
                         playerName: data.playerName || 'Игрок',
-                        sessionId,
+                        sessionId: bodySid,
                         asSpectator,
                     },
                 };
@@ -231,11 +304,19 @@ export class TysiachaRoom extends Server {
             }
 
             case 'INTENT': {
-                if (!sessionId || !data.action || typeof data.action.type !== 'string') return;
+                if (!data.action || typeof data.action.type !== 'string') return;
                 this.touch(sessionId);
                 if (this.isDuplicate(sessionId, data.msgId)) return; // повтор — игнор
 
                 const actionType = data.action.type;
+
+                // SET_STATE — это приёмник снапшота на клиенте, а не интент.
+                // Сервер сам готовит снапшоты; разрешать клиенту подменять ими
+                // авторитетное состояние нельзя.
+                if (actionType === 'SET_STATE') {
+                    reject('Недопустимое действие');
+                    return;
+                }
 
                 // Админ-действия — только от текущего хоста.
                 if (ADMIN_ACTIONS.has(actionType)) {
@@ -243,13 +324,7 @@ export class TysiachaRoom extends Server {
                         (p) => p.id === this.game.hostId && p.sessionId === sessionId
                     );
                     if (!host) {
-                        try {
-                            connection.send(JSON.stringify({
-                                type: 'ERROR',
-                                error: 'Только хост может это сделать',
-                                sessionId,
-                            }));
-                        } catch (e) { /* ignore */ }
+                        reject('Только хост может это сделать');
                         return;
                     }
                 }
@@ -259,25 +334,12 @@ export class TysiachaRoom extends Server {
                 // клиент (зритель, кикнутый, не-текущий игрок) мог кидать кости
                 // и передавать ход. Это blocker: новый игрок теперь по умолчанию
                 // зритель и обязан НЕ иметь возможности мутировать партию.
-                const GAMEPLAY_ACTIONS = new Set([
-                    'ROLL_DICE',
-                    'TOGGLE_DIE_SELECTION',
-                    'KEEP_DICE',
-                    'BANK_SCORE',
-                    'SKIP_TURN',
-                ]);
                 if (GAMEPLAY_ACTIONS.has(actionType)) {
                     const cur = this.game.players[this.game.currentPlayerIndex];
                     const isCurrent =
                         cur && cur.isClaimed && !cur.isSpectator && cur.sessionId === sessionId;
                     if (!isCurrent) {
-                        try {
-                            connection.send(JSON.stringify({
-                                type: 'ERROR',
-                                error: 'Сейчас не ваш ход',
-                                sessionId,
-                            }));
-                        } catch (e) { /* ignore */ }
+                        reject('Сейчас не ваш ход');
                         return;
                     }
                 }
@@ -286,6 +348,7 @@ export class TysiachaRoom extends Server {
                 if (actionType === 'REQUEST_JOIN') {
                     const isSpec = (this.game.spectators || []).some((s) => s.id === sessionId);
                     if (!isSpec) return;
+                    if ((this.game.joinRequests || []).length >= MAX_JOIN_REQUESTS) return;
                 }
 
                 this.applyAction(data.action);
@@ -293,7 +356,6 @@ export class TysiachaRoom extends Server {
             }
 
             case 'PLAYER_LEAVE': {
-                if (!sessionId) return;
                 this.touch(sessionId);
                 this.applyAction({ type: 'PLAYER_LEAVE', payload: { sessionId } });
                 this.presence.delete(sessionId);
@@ -301,13 +363,16 @@ export class TysiachaRoom extends Server {
             }
 
             case 'PING': {
-                if (!sessionId) return;
                 this.touch(sessionId);
+                // Отвечаем PONG: при простое трафик иначе идёт только клиент→сервер,
+                // и промежуточные звенья рвут «тихое» соединение (~60с, код 1006).
+                try {
+                    connection.send(JSON.stringify({ type: 'PONG' }));
+                } catch (e) { /* ignore */ }
                 break;
             }
 
             case 'REQUEST_STATE': {
-                if (!sessionId) return;
                 this.touch(sessionId);
                 try {
                     connection.send(JSON.stringify({ type: 'SET_STATE', payload: this.game }));
@@ -351,17 +416,28 @@ export class TysiachaRoom extends Server {
 
         const url = new URL(request.url);
         if (url.searchParams.get('check') === '1') {
-            await this.ensureLoaded();
-            const claimed = (this.game?.players || []).filter((p) => p.isClaimed);
-            const host = (this.game?.players || []).find((p) => p.id === this.game?.hostId);
-            return Response.json(
-                {
-                    exists: claimed.length > 0,
-                    hostName: host?.name || null,
-                    playerCount: claimed.length,
-                },
-                { headers: this.corsHeaders() }
-            );
+            try {
+                await this.ensureLoaded();
+                // Состояние могло быть испорчено (см. защиту в ensureLoaded) —
+                // на любой не-массив отвечаем безопасными значениями, а не падаем.
+                const players = Array.isArray(this.game?.players) ? this.game.players : [];
+                const claimed = players.filter((p) => p && p.isClaimed);
+                const host = players.find((p) => p && p.id === this.game?.hostId);
+                return Response.json(
+                    {
+                        exists: claimed.length > 0,
+                        hostName: host?.name || null,
+                        playerCount: claimed.length,
+                    },
+                    { headers: this.corsHeaders() }
+                );
+            } catch (e) {
+                console.error('[room] check failed', e);
+                return Response.json(
+                    { exists: false, hostName: null, playerCount: 0 },
+                    { headers: this.corsHeaders() }
+                );
+            }
         }
         return new Response('Tysiacha PartyServer room', {
             status: 200,
@@ -405,9 +481,28 @@ export default {
             return new Response(null, { status: 204, headers: CORS_HEADERS });
         }
 
-        const response = await routePartykitRequest(request, { ...env, ctx }, {
-            Main: TysiachaRoom,
-        });
-        return withCors(response || new Response('Not Found', { status: 404 }));
+        try {
+            // Валидация кода комнаты до маршрутизации: PartyServer падает
+            // с 500 и текстом внутренней ошибки на аномальных именах
+            // (например, 10 000 символов), а имя комнаты задаёт клиент.
+            const url = new URL(request.url);
+            const m = url.pathname.match(/^\/parties\/main\/([^/]+)\/?$/i);
+            if (m) {
+                let room = m[1];
+                try { room = decodeURIComponent(room); } catch (e) { room = ''; }
+                if (!/^[A-Za-z0-9_-]{1,64}$/.test(room)) {
+                    return new Response('Bad Room', { status: 404, headers: CORS_HEADERS });
+                }
+            }
+            const response = await routePartykitRequest(request, { ...env, ctx }, {
+                Main: TysiachaRoom,
+            });
+            return withCors(response || new Response('Not Found', { status: 404 }));
+        } catch (e) {
+            // Внутренние ошибки PartyServer (например, аномальный room-код)
+            // не должны утекать наружу стек-трейсом.
+            console.error('[worker] route failed', e);
+            return new Response('Not Found', { status: 404, headers: CORS_HEADERS });
+        }
     },
 };
