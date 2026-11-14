@@ -1,7 +1,7 @@
 
 import React from 'react';
 
-export const DiceIcon = ({ value, isSelected, onClick, onDragStart, onDoubleClick }) => {
+export const DiceIcon = ({ value, isSelected, onClick, onDragStart, onDoubleClick, isRolling }) => {
   const dots = {
     1: ['center'],
     2: ['top-left', 'bottom-right'],
@@ -39,10 +39,13 @@ export const DiceIcon = ({ value, isSelected, onClick, onDragStart, onDoubleClic
       return React.createElement('div', { className: `${baseClasses} bg-slate-700/50 border-slate-600 border-dashed` });
   }
 
+  // Пока идёт бросок — кубик «трясётся» (анимация в style.css).
+  const rollingClass = isRolling ? ' dice-rolling' : '';
+
   return React.createElement(
     'div',
     {
-      className: `${baseClasses} ${stateClasses}`,
+      className: `${baseClasses} ${stateClasses}${rollingClass}`,
       onClick: onClick,
       onDoubleClick: onDoubleClick,
       draggable: !!onDragStart,

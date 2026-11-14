@@ -154,6 +154,7 @@ export const createInitialState = () => {
     canKeep: false,
     turnStartTime: 0,
     version: 1,
+    rollNonce: 0, // Растёт на каждый реальный бросок — клиент по нему запускает анимацию «кручения» кубиков
   };
 };
 

@@ -47,3 +47,19 @@ body {
   scrollbar-width: thin;
   scrollbar-color: #64748b transparent; /* thumb color track color */
 }
+
+/* --- Анимация броска кубика --- */
+/* Кубик «трясётся», пока идёт бросок (см. GameUI.js rollNonce-хук). */
+@keyframes dice-shake {
+  0%   { transform: translate(0, 0) rotate(0deg); }
+  20%  { transform: translate(-3px, 2px) rotate(-8deg); }
+  40%  { transform: translate(3px, -2px) rotate(7deg); }
+  60%  { transform: translate(-2px, -3px) rotate(-6deg); }
+  80%  { transform: translate(2px, 3px) rotate(5deg); }
+  100% { transform: translate(0, 0) rotate(0deg); }
+}
+
+.dice-rolling {
+  animation: dice-shake 0.18s linear infinite;
+  will-change: transform;
+}

@@ -103,7 +103,41 @@ const GameUI = (props) => {
         x: 0,
         y: 0,
     });
-    
+
+    // --- Анимация броска кубиков ---
+    // Когда сервер присылает новый rollNonce (кто-то бросил кости), кубики
+    // «крутятся» короткое время случайными гранями, затем оседают на реальных
+    // значениях. Работает одинаково для игрока и зрителя — все видят бросок.
+    const ROLL_ANIM_MS = 700;
+    const [rolling, setRolling] = React.useState(false);
+    const [spinValues, setSpinValues] = React.useState([]);
+    const lastNonceRef = React.useRef(gameState.rollNonce);
+    const spinTimerRef = React.useRef(null);
+    const spinIntervalRef = React.useRef(null);
+
+    React.useEffect(() => {
+        const nonce = gameState.rollNonce || 0;
+        if (nonce === lastNonceRef.current) return;
+        lastNonceRef.current = nonce;
+        const count = Math.max(gameState.diceOnBoard.length, 1);
+        setRolling(true);
+        const rand = () => Array.from({ length: count }, () => 1 + Math.floor(Math.random() * 6));
+        setSpinValues(rand());
+        if (spinIntervalRef.current) clearInterval(spinIntervalRef.current);
+        spinIntervalRef.current = setInterval(() => setSpinValues(rand()), 90);
+        if (spinTimerRef.current) clearTimeout(spinTimerRef.current);
+        spinTimerRef.current = setTimeout(() => {
+            setRolling(false);
+            if (spinIntervalRef.current) { clearInterval(spinIntervalRef.current); spinIntervalRef.current = null; }
+        }, ROLL_ANIM_MS);
+    }, [gameState.rollNonce]);
+
+    // Чистим таймеры при размонтировании.
+    React.useEffect(() => () => {
+        if (spinTimerRef.current) clearTimeout(spinTimerRef.current);
+        if (spinIntervalRef.current) clearInterval(spinIntervalRef.current);
+    }, []);
+
     const handleCopyLink = () => {
       // Корректно формируем URL для копирования
       const path = window.location.pathname.endsWith('index.html') 
@@ -328,7 +362,7 @@ const GameUI = (props) => {
               ),
               React.createElement('div', { className: "flex-grow w-full flex flex-col items-center justify-center pt-2 pb-2 sm:pt-3 sm:pb-6 px-0 sm:px-4" },
                 React.createElement('div', { className: "w-full sm:max-w-[480px] flex items-center justify-between min-h-[72px] sm:min-h-[80px]" },
-                  gameState.diceOnBoard.map((value, i) => React.createElement(DiceIcon, { key: `board-${i}`, value: value, isSelected: gameState.selectedDiceIndices.includes(i), onClick: isMyTurn ? () => onToggleDieSelection(i) : null, onDragStart: isMyTurn ? (e) => onDragStart(e, i) : null, onDoubleClick: isMyTurn ? () => onDieDoubleClick(i) : null })),
+                  gameState.diceOnBoard.map((value, i) => React.createElement(DiceIcon, { key: `board-${i}`, value: rolling ? (spinValues[i] || value) : value, isRolling: rolling, isSelected: !rolling && gameState.selectedDiceIndices.includes(i), onClick: isMyTurn ? () => onToggleDieSelection(i) : null, onDragStart: isMyTurn ? (e) => onDragStart(e, i) : null, onDoubleClick: isMyTurn ? () => onDieDoubleClick(i) : null })),
                   Array.from({ length: 5 - gameState.diceOnBoard.length }).map((_, i) => React.createElement(DiceIcon, { key: `placeholder-${i}`, value: 0 }))
                 )
               ),

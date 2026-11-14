@@ -255,11 +255,12 @@ export function gameReducer(state, action) {
             const nextPlayerIndex = findNextActivePlayer(newState.currentPlayerIndex, newPlayers);
             const nextPlayer = newPlayers[nextPlayerIndex];
             let gameMessage = `${currentPlayer.name} получает болт! Ход ${nextPlayer.name}.`;
-            return { ...createInitialState(), players: newPlayers.map(p => ({ ...p, justResetFromBarrel: false })), spectators: newState.spectators, leavers: newState.leavers, hostId: newState.hostId, isGameStarted: true, currentPlayerIndex: nextPlayerIndex, diceOnBoard: newDice, gameMessage, turnStartTime: Date.now(), canRoll: true };
+            return { ...createInitialState(), players: newPlayers.map(p => ({ ...p, justResetFromBarrel: false })), spectators: newState.spectators, leavers: newState.leavers, hostId: newState.hostId, isGameStarted: true, currentPlayerIndex: nextPlayerIndex, diceOnBoard: newDice, gameMessage, turnStartTime: Date.now(), canRoll: true, rollNonce: (newState.rollNonce || 0) + 1 };
         } else {
             return {
                 ...newState,
                 diceOnBoard: newDice,
+                rollNonce: (newState.rollNonce || 0) + 1,
                 keptDiceThisTurn: isHotDiceRoll ? [] : newState.keptDiceThisTurn,
                 diceKeptFromThisRoll: [],
                 scoreFromPreviousRolls: newState.currentTurnScore,
