@@ -8,6 +8,7 @@ const Lobby = ({ onStartGame, initialRoomCode }) => {
   const [roomInfo, setRoomInfo] = React.useState({ status: 'idle', hostName: null }); // idle, checking, exists, free, error
   const [showLocalSetup, setShowLocalSetup] = React.useState(false);
   const [localPlayerCount, setLocalPlayerCount] = React.useState(2);
+  const [asSpectator, setAsSpectator] = React.useState(false);
   
   // Ref для дебаунса ввода
   const checkTimeoutRef = React.useRef(null);
@@ -88,7 +89,9 @@ const Lobby = ({ onStartGame, initialRoomCode }) => {
         mode = 'create'; 
     }
     
-    onStartGame(finalRoomCode, finalPlayerName, mode);
+    // Зритель имеет смысл только при входе в существующую комнату.
+    const joinAsSpectator = asSpectator && mode === 'join';
+    onStartGame(finalRoomCode, finalPlayerName, mode, undefined, joinAsSpectator);
   };
 
   const handleStartLocal = () => {
@@ -203,14 +206,26 @@ const Lobby = ({ onStartGame, initialRoomCode }) => {
         React.createElement(
             'div',
             { className: "flex flex-col gap-4" },
+            // Переключатель «зритель» — только при входе в существующую комнату.
+            roomInfo.status === 'exists' ? React.createElement(
+                'label',
+                { className: "flex items-center justify-center gap-3 text-lg text-gray-300 cursor-pointer select-none" },
+                React.createElement('input', {
+                    type: "checkbox",
+                    checked: asSpectator,
+                    onChange: (e) => setAsSpectator(e.target.checked),
+                    className: "w-5 h-5 accent-blue-500 cursor-pointer"
+                }),
+                'Смотреть как зритель (без участия)'
+            ) : null,
             React.createElement(
                 'button',
                 {
                 onClick: handleUniversalStart,
-                className: `w-full py-4 rounded-lg text-2xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed disabled:scale-100 disabled:shadow-none ${roomInfo.status === 'exists' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`,
+                className: `w-full py-4 rounded-lg text-2xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed disabled:scale-100 disabled:shadow-none ${asSpectator && roomInfo.status === 'exists' ? 'bg-purple-600 hover:bg-purple-700' : roomInfo.status === 'exists' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`,
                 disabled: isButtonDisabled
                 },
-                buttonText
+                (asSpectator && roomInfo.status === 'exists') ? 'СМОТРЕТЬ' : buttonText
             ),
             React.createElement('div', { className: "relative flex py-2 items-center" },
                 React.createElement('div', { className: "flex-grow border-t border-slate-600" }),

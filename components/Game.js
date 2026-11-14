@@ -4,7 +4,7 @@ import { createLocalGameState } from '../utils/gameLogic.js';
 import { useGameEngine } from './hooks/useGameEngine.js';
 import { useRoom } from './hooks/useRoom.js';
 
-const Game = ({ roomCode, playerName, initialMode, localConfig, onExit }) => {
+const Game = ({ roomCode, playerName, initialMode, localConfig, asSpectator = false, onExit }) => {
   const isLocalMode = initialMode === 'local';
 
   // 1. Prepare Initial State for Hooks
@@ -33,6 +33,7 @@ const Game = ({ roomCode, playerName, initialMode, localConfig, onExit }) => {
       isLocalMode,
       mySessionId: mySessionIdRef.current,
       dispatch,
+      asSpectator: asSpectator && !isLocalMode,
   });
 
   // --- WAKE LOCK ---

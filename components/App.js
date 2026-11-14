@@ -49,8 +49,8 @@ const App = () => {
   }, [tabStatus]);
 
 
-  const handleStartGame = React.useCallback((roomCode, playerName, mode, localConfig) => {
-    setGameProps({ roomCode, playerName, initialMode: mode, localConfig });
+  const handleStartGame = React.useCallback((roomCode, playerName, mode, localConfig, asSpectator = false) => {
+    setGameProps({ roomCode, playerName, initialMode: mode, localConfig, asSpectator });
     setScreen('GAME');
   }, []);
   
