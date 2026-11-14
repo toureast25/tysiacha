@@ -136,7 +136,28 @@ const GameUI = (props) => {
     React.useEffect(() => () => {
         if (spinTimerRef.current) clearTimeout(spinTimerRef.current);
         if (spinIntervalRef.current) clearInterval(spinIntervalRef.current);
+        if (flyTimerRef.current) clearTimeout(flyTimerRef.current);
     }, []);
+
+    // --- Анимация «прилёта» кубиков в поле «Отложено» ---
+    // Когда игрок забирает кубик (keptDiceThisTurn растёт), новые кубики
+    // влетают в поле. Работает для всех — и игрок, и зрители видят перемещение.
+    const KEEP_FLY_MS = 500;
+    const [flyInFrom, setFlyInFrom] = React.useState(-1);
+    const prevKeptLenRef = React.useRef(gameState.keptDiceThisTurn.length);
+    const flyTimerRef = React.useRef(null);
+
+    React.useEffect(() => {
+        const cur = gameState.keptDiceThisTurn.length;
+        const prev = prevKeptLenRef.current;
+        if (cur > prev) {
+            setFlyInFrom(prev); // кубики с индекса prev — только что добавлены
+            if (flyTimerRef.current) clearTimeout(flyTimerRef.current);
+            flyTimerRef.current = setTimeout(() => setFlyInFrom(-1), KEEP_FLY_MS);
+        }
+        prevKeptLenRef.current = cur;
+    }, [gameState.keptDiceThisTurn]);
+
 
     const handleCopyLink = () => {
       // Корректно формируем URL для копирования
@@ -354,7 +375,7 @@ const GameUI = (props) => {
                     React.createElement('p', { className: "text-xs text-gray-400 mb-2 text-center uppercase tracking-wider" }, 'Отложено'),
                     React.createElement('div', { className: "flex gap-2 flex-wrap justify-center min-h-[40px] items-center" },
                       gameState.keptDiceThisTurn.length > 0
-                        ? gameState.keptDiceThisTurn.map((value, i) => React.createElement(SmallDiceIcon, { key: `kept-${i}`, value: value }))
+                        ? gameState.keptDiceThisTurn.map((value, i) => React.createElement(SmallDiceIcon, { key: `kept-${i}`, value: value, isFlying: flyInFrom >= 0 && i >= flyInFrom }))
                         : React.createElement('span', { className: "text-slate-500 italic" }, 'Пусто')
                     )
                   )

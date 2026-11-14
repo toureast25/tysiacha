@@ -57,7 +57,7 @@ export const DiceIcon = ({ value, isSelected, onClick, onDragStart, onDoubleClic
   );
 };
 
-export const SmallDiceIcon = ({ value }) => {
+export const SmallDiceIcon = ({ value, isFlying }) => {
   const dots = {
     1: ['center'],
     2: ['top-left', 'bottom-right'],
@@ -77,9 +77,11 @@ export const SmallDiceIcon = ({ value }) => {
       'mid-right': 'top-1/2 right-1/4 translate-x-1/2 -translate-y-1/2',
   }
   
+  const flyClass = isFlying ? ' dice-fly-in' : '';
+
   return React.createElement(
     'div',
-    { className: "w-8 h-8 sm:w-10 sm:h-10 bg-slate-300 rounded shadow-sm flex items-center justify-center relative border border-slate-400" },
+    { className: `w-8 h-8 sm:w-10 sm:h-10 bg-slate-300 rounded shadow-sm flex items-center justify-center relative border border-slate-400${flyClass}` },
     value > 0 && dots[value] && dots[value].map(pos => 
       React.createElement('div', { key: pos, className: `absolute w-2 h-2 bg-slate-900 rounded-full ${dotClasses[pos]}` })
     )
