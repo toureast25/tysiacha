@@ -334,6 +334,11 @@ const CORS_HEADERS = {
 };
 
 function withCors(response) {
+    if (!response) return new Response('Not Found', { status: 404, headers: CORS_HEADERS });
+    // WebSocket-апгрейд: Cloudflare несёт соединение в response.webSocket.
+    // Пересборка через new Response(body) это поле ТЕРЯЕТ и ломает апгрейд
+    // (клиент получает код 1006). WS не под CORS, поэтому отдаём как есть.
+    if (response.webSocket) return response;
     const headers = new Headers(response.headers);
     for (const [k, v] of Object.entries(CORS_HEADERS)) headers.set(k, v);
     return new Response(response.body, {
