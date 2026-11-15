@@ -44,11 +44,14 @@ export const DiceIcon = ({ value, isSelected, onClick, onDragStart, onDoubleClic
   }
 
   const cubeClasses = `dice-cube${isRolling ? ' dice-rolling-3d' : ''}${isSelected ? ' is-selected' : ''}`;
+  const wrapClasses = 'dice-3d-wrap w-full aspect-square'
+    + (isRolling ? ' dice-wrap-rolling' : '')
+    + (onClick ? ' cursor-pointer' : '');
 
   return React.createElement(
     'div',
     {
-      className: 'dice-3d-wrap w-full aspect-square' + (onClick ? ' cursor-pointer' : ''),
+      className: wrapClasses,
       onClick: onClick,
       onDoubleClick: onDoubleClick,
       draggable: !!onDragStart,
