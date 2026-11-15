@@ -110,6 +110,7 @@ const GameUI = (props) => {
     // значениях. Работает одинаково для игрока и зрителя — все видят бросок.
     const ROLL_ANIM_MS = 700;
     const [rolling, setRolling] = React.useState(false);
+    const [spinStyles, setSpinStyles] = React.useState([]);
     const lastNonceRef = React.useRef(gameState.rollNonce);
     const spinTimerRef = React.useRef(null);
 
@@ -117,10 +118,22 @@ const GameUI = (props) => {
         const nonce = gameState.rollNonce || 0;
         if (nonce === lastNonceRef.current) return;
         lastNonceRef.current = nonce;
-        // Значения НЕ подменяем: кубик просто кувыркается CSS-анимацией
-        // (dice-spin) и сам останавливается на реальной грани. Подмена
-        // значений раньше доворачивала куб под каждое случайное число —
-        // из-за этого точки «перетекали» на лицевой грани.
+        // Значения НЕ подменяем: кубик кувыркается CSS-анимацией (dice-spin)
+        // и сам останавливается на реальной грани. Каждому кубику — свой набор
+        // углов и своя длительность: разное направление, скорость и число
+        // оборотов, чтобы бросок не выглядел синхронным. Конечные углы кратны
+        // 360°, поэтому кубик всегда замирает ровно своей гранью.
+        const count = Math.max(gameState.diceOnBoard.length, 1);
+        const spins = Array.from({ length: count }, () => {
+            const turns = (n) => (Math.floor(Math.random() * n) + 1) * 360 * (Math.random() < 0.5 ? -1 : 1);
+            return {
+                '--sx': turns(2) + 'deg',   // 1–2 оборота вокруг X, ±
+                '--sy': turns(3) + 'deg',   // 1–3 оборота вокруг Y, ±
+                '--sz': turns(1) + 'deg',   // 0–1 оборот вокруг Z, ±
+                animationDuration: (0.55 + Math.random() * 0.45).toFixed(2) + 's',
+            };
+        });
+        setSpinStyles(spins);
         setRolling(true);
         if (spinTimerRef.current) clearTimeout(spinTimerRef.current);
         spinTimerRef.current = setTimeout(() => setRolling(false), ROLL_ANIM_MS);
@@ -434,7 +447,7 @@ const GameUI = (props) => {
                 // aspect-square, поэтому их высота = ширина. На низких экранах
                 // сетка сжимается пропорционально и не вылезает за экран.
                 React.createElement('div', { className: "w-full mx-auto grid grid-cols-5 gap-2 sm:gap-3", style: { maxWidth: 'min(420px, 46dvh)', perspective: '600px' } },
-                  gameState.diceOnBoard.map((value, i) => React.createElement(DiceIcon, { key: `board-${i}`, value: value, isRolling: rolling, isSelected: !rolling && gameState.selectedDiceIndices.includes(i), onClick: isMyTurn ? () => onToggleDieSelection(i) : null, onDragStart: isMyTurn ? (e) => onDragStart(e, i) : null, onDoubleClick: isMyTurn ? () => onDieDoubleClick(i) : null })),
+                  gameState.diceOnBoard.map((value, i) => React.createElement(DiceIcon, { key: `board-${i}`, value: value, isRolling: rolling, spinStyle: spinStyles[i], isSelected: !rolling && gameState.selectedDiceIndices.includes(i), onClick: isMyTurn ? () => onToggleDieSelection(i) : null, onDragStart: isMyTurn ? (e) => onDragStart(e, i) : null, onDoubleClick: isMyTurn ? () => onDieDoubleClick(i) : null })),
                   Array.from({ length: 5 - gameState.diceOnBoard.length }).map((_, i) => React.createElement(DiceIcon, { key: `placeholder-${i}`, value: 0 }))
                 )
               ),

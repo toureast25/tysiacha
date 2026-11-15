@@ -221,12 +221,21 @@ body {
   background: #fef3c7;
 }
 
-/* Бросок: кубик крутится в 3D вокруг обеих осей, затем тяжело доводится. */
+/* Бросок: кубик крутится в 3D, затем тяжело доводится. Углы поворота и
+   длительность — CSS-переменные, которые GameUI задаёт каждому кубику свои
+   (своя скорость, направление и число оборотов). Конечные углы кратны 360°,
+   поэтому кубик всегда замирает ровно своей гранью. Значения по умолчанию —
+   на случай, если inline-переменные не пришли. */
+.dice-cube {
+  --sx: 720deg;
+  --sy: 720deg;
+  --sz: 0deg;
+}
 @keyframes dice-spin {
-  0%   { transform: rotateX(0deg)   rotateY(0deg)   scale(0.9); }
-  30%  { transform: rotateX(240deg) rotateY(180deg) scale(1.08); }
-  65%  { transform: rotateX(480deg) rotateY(420deg) scale(1.02); }
-  100% { transform: rotateX(720deg) rotateY(720deg) scale(1); }
+  0%   { transform: rotateX(0) rotateY(0) rotateZ(0) scale(0.9); }
+  30%  { transform: rotateX(calc(var(--sx) * 0.35)) rotateY(calc(var(--sy) * 0.4)) rotateZ(calc(var(--sz) * 0.4)) scale(1.08); }
+  70%  { transform: rotateX(calc(var(--sx) * 0.75)) rotateY(calc(var(--sy) * 0.8)) rotateZ(calc(var(--sz) * 0.85)) scale(1.02); }
+  100% { transform: rotateX(var(--sx)) rotateY(var(--sy)) rotateZ(var(--sz)) scale(1); }
 }
 .dice-cube.dice-rolling-3d {
   animation: dice-spin 0.7s var(--ease-out) both;

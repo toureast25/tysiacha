@@ -35,7 +35,7 @@ const Face = ({ face, value }) =>
 
 // Кубик — настоящий 3D-объект из шести граней (см. style.css). В покое
 // развёрнут гранью со значением `value` к зрителю; при isRolling крутится.
-export const DiceIcon = ({ value, isSelected, onClick, onDragStart, onDoubleClick, isRolling }) => {
+export const DiceIcon = ({ value, isSelected, onClick, onDragStart, onDoubleClick, isRolling, spinStyle }) => {
   // Пустая ячейка (костей меньше пяти) — плоский пунктирный слот.
   if (value === 0) {
     return React.createElement('div', {
@@ -56,7 +56,7 @@ export const DiceIcon = ({ value, isSelected, onClick, onDragStart, onDoubleClic
     },
     React.createElement(
       'div',
-      { className: cubeClasses, 'data-value': value },
+      { className: cubeClasses, 'data-value': value, style: isRolling ? spinStyle : undefined },
       React.createElement(Face, { face: 'front', value: 1 }),
       React.createElement(Face, { face: 'back', value: 6 }),
       React.createElement(Face, { face: 'right', value: 3 }),
