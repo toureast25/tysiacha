@@ -32,7 +32,15 @@ import { gameReducer } from '../utils/gameReducer.js';
 import { createInitialState } from '../utils/gameLogic.js';
 import { Server, routePartykitRequest } from 'partyserver';
 
+// Ключ хранилища состояния комнаты. Смена ключа = сброс всех комнат: DO
+// читают новый ключ, ничего не находят и стартуют с пустого состояния, а
+// старые данные под прежним ключом становятся недостижимыми.
 const STORAGE_KEY = '***';
+// Поколение состояния. Увеличь STATE_EPOCH (или смени STORAGE_KEY), чтобы
+// принудительно сбросить ВСЕ комнаты, включая тёплые инстансы DO, которые
+// иначе держат старое состояние в памяти и не перечитывают storage.
+const EPOCH_KEY = '***';
+const STATE_EPOCH = 2;
 const PRESENCE_TICK_MS = 10000;   // как часто sweeping-аларм проверяет presence
 const OFFLINE_AFTER_MS = 45000;   // нет PING дольше — игрок считается offline
 const SEEN_CAP = 5000;            // потолок карты дедупликации интентов
@@ -69,14 +77,28 @@ export class TysiachaRoom extends Server {
     seen = new Map();
     /** @type {Promise<void>|null} однократная загрузка состояния из storage. */
     _loading = null;
+    /** @type {number|null} поколение состояния, загруженное в this.game. */
+    _loadedEpoch = null;
 
     // --- загрузка авторитетного состояния (ленивая, однократная) ---
     async ensureLoaded() {
-        if (this.game) return;
+        // Тёплый инстанс держит this.game в памяти и обычно не перечитывает
+        // storage. Если поколение кода сменилось (сброс) — заставляем перечитать:
+        // storage под новым STORAGE_KEY пуст => комната стартует с нуля.
+        if (this.game && this._loadedEpoch === STATE_EPOCH) return;
         if (!this._loading) {
             this._loading = (async () => {
                 try {
-                    const stored = await this.ctx.storage.get(STORAGE_KEY);
+                    const storedEpoch = await this.ctx.storage.get(EPOCH_KEY);
+                    let stored = null;
+                    if (storedEpoch === STATE_EPOCH) {
+                        stored = await this.ctx.storage.get(STORAGE_KEY);
+                    } else {
+                        // Поколение сменилось (или комната новая): игнорируем
+                        // старое состояние, стартуем пусто и запоминаем поколение.
+                        stored = null;
+                        try { await this.ctx.storage.put(EPOCH_KEY, STATE_EPOCH); } catch (e) { /* ignore */ }
+                    }
                     this.game = stored || createInitialState();
                     // Защита от испорченного снапшота в хранилище: состояние должно
                     // быть объектом с массивом игроков, иначе комната служит мусором
@@ -90,8 +112,10 @@ export class TysiachaRoom extends Server {
                     if (!Array.isArray(this.game.spectators)) this.game.spectators = [];
                     if (!Array.isArray(this.game.joinRequests)) this.game.joinRequests = [];
                     if (typeof this.game.joinErrors !== 'object' || !this.game.joinErrors) this.game.joinErrors = {};
+                    this._loadedEpoch = STATE_EPOCH;
                 } catch (e) {
                     this.game = createInitialState();
+                    this._loadedEpoch = STATE_EPOCH;
                 }
             })();
         }
