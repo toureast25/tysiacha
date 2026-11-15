@@ -173,14 +173,18 @@ body {
 .dice-3d-wrap {
   perspective: 600px;
 }
+/* Перспектива зашита прямо в transform каждого кубика (perspective(700px)),
+   а не только на родителе: так переворот гарантированно объёмный в каждом
+   браузере, независимо от того, как grid-контейнер применяет перспективу. */
 @keyframes dice-flip {
-  0%   { transform: rotateX(0deg) rotateY(0deg) scale(0.9); }
-  35%  { transform: rotateX(220deg) rotateY(160deg) scale(1.08); }
-  70%  { transform: rotateX(360deg) rotateY(340deg) scale(1.02); }
-  100% { transform: rotateX(360deg) rotateY(360deg) scale(1); }
+  0%   { transform: perspective(700px) rotateX(0deg) rotateY(0deg) scale(0.9); }
+  35%  { transform: perspective(700px) rotateX(220deg) rotateY(160deg) scale(1.08); }
+  70%  { transform: perspective(700px) rotateX(360deg) rotateY(340deg) scale(1.02); }
+  100% { transform: perspective(700px) rotateX(360deg) rotateY(360deg) scale(1); }
 }
 .dice-rolling-3d {
   animation: dice-flip 0.7s var(--ease-out) both;
+  transform-style: preserve-3d;
   will-change: transform;
 }
 
