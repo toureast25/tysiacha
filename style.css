@@ -184,6 +184,11 @@ body {
   position: relative;
   width: var(--s);
   height: var(--s);
+  /* Куб обязан оставаться квадратным: как flex-элемент он по умолчанию
+     сжимается по ширине, когда ячейка сетки уже ребра, — грани становятся
+     прямоугольными. Запрещаем сжатие и фиксируем соотношение 1:1. */
+  flex-shrink: 0;
+  aspect-ratio: 1 / 1;
   transform-style: preserve-3d;
   transition: transform 0.5s var(--ease-out);
   will-change: transform;

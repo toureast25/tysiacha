@@ -7,7 +7,9 @@ const DOTS = {
   3: ['top-left', 'center', 'bottom-right'],
   4: ['top-left', 'top-right', 'bottom-left', 'bottom-right'],
   5: ['top-left', 'top-right', 'center', 'bottom-left', 'bottom-right'],
-  6: ['top-left', 'top-right', 'mid-left', 'mid-right', 'bottom-left', 'bottom-right'],
+  // Шесть — два вертикальных столбца по три точки (левый и правый), ровный
+  // вертикальный шаг. Отдельные позиции, чтобы грань читалась как столбцы.
+  6: ['c6-lt', 'c6-lm', 'c6-lb', 'c6-rt', 'c6-rm', 'c6-rb'],
 };
 
 const DOT_POS = {
@@ -18,6 +20,14 @@ const DOT_POS = {
   'bottom-right': 'bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2',
   'mid-left': 'top-1/2 left-1/4 -translate-x-1/2 -translate-y-1/2',
   'mid-right': 'top-1/2 right-1/4 -translate-x-1/2 -translate-y-1/2',
+  // Два вертикальных столбца для шестёрки: левый на 30%, правый на 30% от
+  // правого края; ряды на 22% / 50% / 78% сверху.
+  'c6-lt': 'top-[22%] left-[30%] -translate-x-1/2 -translate-y-1/2',
+  'c6-lm': 'top-1/2 left-[30%] -translate-x-1/2 -translate-y-1/2',
+  'c6-lb': 'top-[78%] left-[30%] -translate-x-1/2 -translate-y-1/2',
+  'c6-rt': 'top-[22%] right-[30%] translate-x-1/2 -translate-y-1/2',
+  'c6-rm': 'top-1/2 right-[30%] translate-x-1/2 -translate-y-1/2',
+  'c6-rb': 'top-[78%] right-[30%] translate-x-1/2 -translate-y-1/2',
 };
 
 // Одна грань куба: квадрат с точками нужного значения.
