@@ -41,7 +41,7 @@ const STORAGE_KEY = '***';
 // иначе держат старое состояние в памяти и не перечитывают storage.
 const EPOCH_KEY = '***';
 const STATE_EPOCH = 2;
-const PRESENCE_TICK_MS = 10000;   // как часто sweeping-аларм проверяет presence
+const PRESENCE_TICK_MS = 15000;   // как часто sweeping-аларм проверяет presence
 const OFFLINE_AFTER_MS = 45000;   // нет PING дольше — игрок считается offline
 const SEEN_CAP = 5000;            // потолок карты дедупликации интентов
 const MAX_SPECTATORS = 20;        // потолок зрителей: без него флуд соединений раздувает снапшот
