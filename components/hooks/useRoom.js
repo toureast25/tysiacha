@@ -15,6 +15,7 @@
 
 import React from 'react';
 import { partykitConfig } from '../../utils/config.js';
+import { probeServerReason } from '../../utils/roomApi.js';
 
 const HEARTBEAT_MS = 10000;      // как часто шлём PING
 const RECONNECT_BASE_MS = 500;   // база backoff
@@ -39,6 +40,8 @@ export const useRoom = ({
     const [connectionStatus, setConnectionStatus] = React.useState(
         isLocalMode ? 'connected' : 'connecting'
     );
+    // Различимая причина сбоя соединения: 'quota' | 'server' | 'offline' | 'unknown' | null.
+    const [connectionReason, setConnectionReason] = React.useState(null);
 
     const wsRef = React.useRef(null);
     const reconnectAttemptRef = React.useRef(0);
@@ -48,6 +51,7 @@ export const useRoom = ({
     const queueRef = React.useRef([]);          // интенты, не отправленные пока offline
     const closedByUsRef = React.useRef(false);
     const mountedRef = React.useRef(true);
+    const probedRef = React.useRef(false);     // зонд причины уже делался на этой волне?
 
     // Отправка одного сообщения, если открыто; иначе в очередь.
     const rawSend = React.useCallback((obj) => {
@@ -99,6 +103,17 @@ export const useRoom = ({
             reconnectTimerRef.current = setTimeout(connect, delay + jitter);
         };
 
+        // При сбое сокета делаем лёгкий HTTP-зонд, чтобы различить причину:
+        // квота DO / сбой сервера / отсутствие сети. Зонд не спамим — не чаще
+        // одного раза на «волну» переподключений (сбрасывается при коннекте).
+        const probeOnce = () => {
+            if (probedRef.current) return;
+            probedRef.current = true;
+            probeServerReason()
+                .then((reason) => { if (mountedRef.current) setConnectionReason(reason); })
+                .catch(() => {});
+        };
+
         const connect = () => {
             if (!mountedRef.current || closedByUsRef.current) return;
             let ws;
@@ -114,6 +129,8 @@ export const useRoom = ({
             ws.onopen = () => {
                 if (!mountedRef.current) { try { ws.close(); } catch (e) {} return; }
                 reconnectAttemptRef.current = 0;
+                probedRef.current = false;
+                setConnectionReason(null);
                 setConnectionStatus('connected');
 
                 // Вход/переподключение + запрос актуального снапшота.
@@ -152,6 +169,7 @@ export const useRoom = ({
             ws.onclose = () => {
                 if (heartbeatTimerRef.current) { clearInterval(heartbeatTimerRef.current); heartbeatTimerRef.current = null; }
                 if (!mountedRef.current || closedByUsRef.current) return;
+                probeOnce();
                 scheduleReconnect();
             };
         };
@@ -169,5 +187,5 @@ export const useRoom = ({
         };
     }, [roomCode, playerName, isLocalMode, mySessionId, deviceId, dispatch, rawSend, asSpectator]);
 
-    return { connectionStatus, sendAction, sendLeave };
+    return { connectionStatus, connectionReason, sendAction, sendLeave };
 };

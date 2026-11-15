@@ -41,14 +41,14 @@ const Lobby = ({ onStartGame, initialRoomCode }) => {
           try {
               const result = await checkRoomAvailability(code);
               if (result.error) {
-                  setRoomInfo({ status: 'error' });
+                  setRoomInfo({ status: 'error', reason: result.reason || 'offline' });
               } else if (result.exists) {
                   setRoomInfo({ status: 'exists', hostName: result.hostName });
               } else {
                   setRoomInfo({ status: 'free' });
               }
           } catch (e) {
-              setRoomInfo({ status: 'error' });
+              setRoomInfo({ status: 'error', reason: 'offline' });
           }
       }, 600); // Задержка проверки 600мс после ввода
 
@@ -112,7 +112,14 @@ const Lobby = ({ onStartGame, initialRoomCode }) => {
     }
 
     if (roomInfo.status === 'error') {
-        return React.createElement('div', { className: "text-sm text-red-400 mt-2 min-h-[24px]" }, 'Ошибка сети');
+        const LOBBY_REASON_TEXT = {
+            quota: 'Сервер перегружен: дневной лимит исчерпан, обычно сбрасывается около полуночи по UTC.',
+            server: 'Игровой сервер временно не отвечает. Попробуйте через минуту.',
+            offline: 'Нет интернета — проверьте подключение.',
+            unknown: 'Не удалось проверить комнату. Попробуйте ещё раз.',
+        };
+        const txt = LOBBY_REASON_TEXT[roomInfo.reason] || 'Ошибка сети';
+        return React.createElement('div', { className: "text-sm text-red-400 mt-2 min-h-[24px]" }, txt);
     }
 
     if (roomInfo.status === 'exists') {

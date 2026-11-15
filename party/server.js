@@ -538,10 +538,21 @@ export default {
             });
             return withCors(response || new Response('Not Found', { status: 404 }));
         } catch (e) {
-            // Внутренние ошибки PartyServer (например, аномальный room-код)
-            // не должны утекать наружу стек-трейсом.
-            console.error('[worker] route failed', e);
-            return new Response('Not Found', { status: 404, headers: CORS_HEADERS });
+            // Различаем причины сбоя, чтобы клиент показал конкретное сообщение,
+            // а не глухое «ошибка сети». Стек-трейс наружу не утекает.
+            const msg = (e && e.message) || '';
+            const isQuota = /Durable Objects free tier|Exceeded allowed volume|over.{0,20}quota/i.test(msg);
+            console.error('[worker] route failed', msg || e);
+            if (isQuota) {
+                return new Response(JSON.stringify({ reason: 'quota' }), {
+                    status: 429,
+                    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+                });
+            }
+            return new Response(JSON.stringify({ reason: 'server' }), {
+                status: 503,
+                headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+            });
         }
     },
 };

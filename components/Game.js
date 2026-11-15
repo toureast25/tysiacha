@@ -40,7 +40,7 @@ const Game = ({ roomCode, playerName, initialMode, localConfig, asSpectator = fa
   const wakeLockRef = React.useRef(null);
 
   // 4. Init Network Hook (PartyKit room). Сервер — единственный источник истины.
-  const { connectionStatus, sendAction: sendRoomAction, sendLeave } = useRoom({
+  const { connectionStatus, connectionReason, sendAction: sendRoomAction, sendLeave } = useRoom({
       roomCode,
       playerName,
       isLocalMode,
@@ -108,17 +108,43 @@ const Game = ({ roomCode, playerName, initialMode, localConfig, asSpectator = fa
   const [showHostBlockModal, setShowHostBlockModal] = React.useState(false);
 
   // --- RENDER LOADING/ERROR STATES ---
+  // Различимые сообщения по причине сбоя (из зонда useRoom). Квота DO приходит
+  // как 'reconnecting' + reason='quota', поэтому проверяем reason независимо
+  // от connectionStatus.
+  const REASON_TEXT = {
+      quota: {
+          title: 'Сервер перегружен',
+          text: 'Достигнут дневной лимит игрового сервера. Обычно он сбрасывается около полуночи по UTC — попробуйте позже.',
+      },
+      server: {
+          title: 'Сервер недоступен',
+          text: 'Игровой сервер временно не отвечает. Попробуйте повторить через минуту.',
+      },
+      offline: {
+          title: 'Нет интернета',
+          text: 'Устройство не видит сеть. Проверьте подключение и повторите.',
+      },
+  };
+  const reasonInfo = connectionReason ? REASON_TEXT[connectionReason] : null;
+  const isDown = connectionStatus === 'error' || !!reasonInfo;
+
   if (!gameState) {
+      const title = reasonInfo ? reasonInfo.title
+          : (connectionStatus === 'error' ? 'Ошибка сети'
+              : (connectionStatus === 'connected' ? 'Синхронизация...' : 'Подключение...'));
+      const body = reasonInfo ? reasonInfo.text
+          : (connectionStatus === 'error' ? 'Не удалось подключиться к серверу игры. Попробуйте офлайн режим.'
+              : (connectionStatus === 'connected' ? 'Ждем данные от сервера...' : null));
       return React.createElement('div', { className: "text-center w-full p-8" },
-        React.createElement('h2', { className: `font-ruslan text-4xl mb-4 ${connectionStatus === 'error' ? 'text-red-500' : 'text-title-yellow'}` },
-            connectionStatus === 'error' ? 'Ошибка сети' : (connectionStatus === 'connected' ? 'Синхронизация...' : 'Подключение...')
+        React.createElement('h2', { className: `font-ruslan text-4xl mb-4 ${isDown ? 'text-red-500' : 'text-title-yellow'}` },
+            title
         ),
-        connectionStatus === 'error' && React.createElement('p', { className: "text-lg mb-6 max-w-md mx-auto" }, 'Не удалось подключиться к серверу игры. Попробуйте офлайн режим.'),
+        body && React.createElement('p', { className: "text-lg mb-6 max-w-md mx-auto" }, body),
         connectionStatus === 'connected' && React.createElement('p', { className: "text-lg mb-6 max-w-md mx-auto" }, 'Ждем данные от сервера...'),
-        (connectionStatus === 'connecting' || connectionStatus === 'reconnecting' || connectionStatus === 'connected') && React.createElement('div', { className: "w-8 h-8 border-4 border-t-transparent border-title-yellow rounded-full animate-spin mx-auto" }),
+        (!isDown) && React.createElement('div', { className: "w-8 h-8 border-4 border-t-transparent border-title-yellow rounded-full animate-spin mx-auto" }),
         React.createElement('div', { className: 'flex justify-center gap-4 mt-8' },
             React.createElement('button', { onClick: onExit, className: "px-4 py-2 bg-slate-700 hover:bg-slate-700 rounded" }, "В меню"),
-            connectionStatus === 'error' && React.createElement('button', { onClick: manualRetry, className: "px-4 py-2 bg-green-600 hover:bg-green-700 rounded" }, "Повторить")
+            isDown && React.createElement('button', { onClick: manualRetry, className: "px-4 py-2 bg-green-600 hover:bg-green-700 rounded" }, "Повторить")
         )
       );
   }
