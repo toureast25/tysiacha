@@ -1,9 +1,34 @@
 
 html, body, #root {
+  height: 100%;
   min-height: 100%;
   margin: 0;
   padding: 0;
+  /* Вертикальный скролл запрещён: всё живёт ровно во вьюпорте. */
+  overflow: hidden;
+  overscroll-behavior: none;
 }
+
+/* --- Пропорциональный вертикальный ритм ---
+   Все вертикальные отступы игрового экрана заданы долями от высоты
+   вьюпорта (dvh) с clamp-ограничителями: на низких экранах они сжимаются,
+   на высоких — растут, сохраняя исходные соотношения между блоками. */
+:root {
+  --v-gap:    clamp(0.25rem, 1.4dvh, 1rem);     /* основной вертикальный зазор */
+  --v-gap-sm: clamp(0.125rem, 0.8dvh, 0.5rem);  /* малый зазор */
+  --v-pad:    clamp(0.25rem, 1.2dvh, 0.875rem); /* вертикальный паддинг блоков */
+}
+.v-mb  { margin-bottom: var(--v-gap); }
+.v-mb-sm { margin-bottom: var(--v-gap-sm); }
+.v-mt  { margin-top: var(--v-gap); }
+.v-py  { padding-top: var(--v-gap); padding-bottom: var(--v-gap); }
+/* Высота фиксированных полос — тоже долей вьюпорта, а не пикселями. */
+.v-band    { min-height: clamp(2.5rem, 8dvh, 4.5rem); }
+.v-band-sm { min-height: clamp(1.75rem, 5dvh, 3rem); }
+/* Вертикальный паддинг крупных кнопок — долей вьюпорта: на низких экранах
+   кнопки становятся ниже, сохраняя читаемость (min не даст схлопнуться). */
+.v-btn-lg { padding-top: clamp(0.5rem, 2.2dvh, 1.25rem); padding-bottom: clamp(0.5rem, 2.2dvh, 1.25rem); }
+.v-btn-sm { padding-top: clamp(0.375rem, 1.6dvh, 0.75rem); padding-bottom: clamp(0.375rem, 1.6dvh, 0.75rem); }
 
 body {
   font-family: 'Roboto Condensed', sans-serif;

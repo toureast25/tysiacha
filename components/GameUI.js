@@ -210,8 +210,10 @@ const GameUI = (props) => {
             onAction: handleContextMenuAction,
         }),
         React.createElement(
-          'div', { className: "w-full min-h-[100dvh] lg:h-[100dvh] flex flex-col p-2 sm:p-4 text-white overflow-x-hidden" },
-          React.createElement('header', { className: "flex flex-wrap justify-between items-center gap-2 mb-2 sm:mb-4 flex-shrink-0" },
+          // Экран игры намертво привязан к высоте вьюпорта: вертикального
+          // скролла нет, всё влезает за счёт пропорциональных отступов (dvh).
+          'div', { className: "fixed inset-0 h-[100dvh] w-full flex flex-col p-2 sm:p-4 text-white overflow-hidden" },
+          React.createElement('header', { className: "flex flex-wrap justify-between items-center gap-2 v-mb flex-shrink-0" },
             React.createElement('div', { className: "flex items-center gap-2 p-2 pr-1 bg-black/50 rounded-lg text-xs sm:text-sm" },
               React.createElement('p', { className: "font-mono hidden sm:block" }, `КОД КОМНАТЫ:`),
               React.createElement('strong', { className: "font-mono text-sm sm:text-base tracking-widest text-title-yellow" }, roomCode),
@@ -370,13 +372,13 @@ const GameUI = (props) => {
             React.createElement('main', { className: `relative lg:col-span-3 bg-slate-900/70 rounded-xl border-2 flex flex-col justify-between min-h-0 p-2 sm:p-4 transition-all duration-500 ease-in-out ${isDragOver && isMyTurn ? 'border-green-400 shadow-2xl shadow-green-400/20' : 'border-slate-600'} ${isScoreboardExpanded ? 'hidden lg:flex' : 'flex'}`, onDragOver: (e) => {e.preventDefault(); onSetIsDragOver(true);}, onDrop: onDrop, onDragLeave: () => onSetIsDragOver(false) },
               React.createElement(JoinRequestManager, { isHost, gameState, onJoinRequest }),
               React.createElement('div', { className: "w-full" },
-                React.createElement('div', { className: `w-full p-2 sm:p-3 mb-2 sm:mb-4 text-center rounded-lg ${gameState.isGameOver ? 'bg-green-600' : 'bg-slate-800'} border border-slate-600 flex items-center justify-center min-h-[60px] sm:min-h-[72px]` },
+                React.createElement('div', { className: `w-full p-2 sm:p-3 v-mb text-center rounded-lg ${gameState.isGameOver ? 'bg-green-600' : 'bg-slate-800'} border border-slate-600 flex items-center justify-center v-band` },
                   React.createElement('p', { className: "text-lg font-semibold" }, displayMessage)
                 ),
                 React.createElement('div', { className: "w-full flex justify-center md:justify-end" },
                   React.createElement('div', { className: "p-2 sm:p-3 rounded-lg bg-black/40 border border-slate-700 w-full md:w-auto md:min-w-[300px]" },
                     React.createElement('p', { className: "text-xs text-gray-400 mb-2 text-center uppercase tracking-wider" }, 'Отложено'),
-                    React.createElement('div', { className: "flex gap-2 flex-wrap justify-center min-h-[40px] items-center" },
+                    React.createElement('div', { className: "flex gap-2 flex-wrap justify-center items-center v-band-sm" },
                       gameState.keptDiceThisTurn.length > 0
                         ? gameState.keptDiceThisTurn.map((value, i) => React.createElement(SmallDiceIcon, { key: `kept-${i}`, value: value, isFlying: flyInFrom >= 0 && i >= flyInFrom }))
                         : React.createElement('span', { className: "text-slate-500 italic" }, 'Пусто')
@@ -384,15 +386,18 @@ const GameUI = (props) => {
                   )
                 )
               ),
-              React.createElement('div', { className: "flex-grow w-full flex flex-col items-center justify-center pt-2 pb-2 sm:pt-3 sm:pb-6 px-0 sm:px-4" },
-                React.createElement('div', { className: "w-full max-w-[420px] mx-auto grid grid-cols-5 gap-2 sm:gap-3" },
+              React.createElement('div', { className: "flex-grow w-full flex flex-col items-center justify-center v-py px-0 sm:px-4 min-h-0" },
+                // Ширина сетки привязана и к высоте вьюпорта (42dvh): кубики
+                // aspect-square, поэтому их высота = ширина. На низких экранах
+                // сетка сжимается пропорционально и не вылезает за экран.
+                React.createElement('div', { className: "w-full mx-auto grid grid-cols-5 gap-2 sm:gap-3", style: { maxWidth: 'min(420px, 46dvh)' } },
                   gameState.diceOnBoard.map((value, i) => React.createElement(DiceIcon, { key: `board-${i}`, value: rolling ? (spinValues[i] || value) : value, isRolling: rolling, isSelected: !rolling && gameState.selectedDiceIndices.includes(i), onClick: isMyTurn ? () => onToggleDieSelection(i) : null, onDragStart: isMyTurn ? (e) => onDragStart(e, i) : null, onDoubleClick: isMyTurn ? () => onDieDoubleClick(i) : null })),
                   Array.from({ length: 5 - gameState.diceOnBoard.length }).map((_, i) => React.createElement(DiceIcon, { key: `placeholder-${i}`, value: 0 }))
                 )
               ),
               React.createElement('div', { className: "w-full" },
-                 showSkipButton && React.createElement('div', {className: 'text-center mb-2'}, React.createElement('button', {onClick: onSkipTurn, className: 'max-w-full px-4 py-2 bg-orange-600 hover:bg-orange-700 rounded-lg font-bold animate-pulse'}, React.createElement('span', {className: 'inline-block max-w-full truncate align-middle'}, `Пропустить ход ${currentPlayer.name}`))),
-                React.createElement('div', { className: "text-center mb-2 sm:mb-4" },
+                 showSkipButton && React.createElement('div', {className: 'text-center v-mb-sm'}, React.createElement('button', {onClick: onSkipTurn, className: 'max-w-full px-4 v-btn-sm bg-orange-600 hover:bg-orange-700 rounded-lg font-bold animate-pulse'}, React.createElement('span', {className: 'inline-block max-w-full truncate align-middle'}, `Пропустить ход ${currentPlayer.name}`))),
+                React.createElement('div', { className: "text-center v-mb" },
                   React.createElement('p', { className: "text-base sm:text-xl" }, 'Очки за ход: ', React.createElement('span', { className: "font-ruslan text-4xl sm:text-5xl text-green-400 break-all" }, gameState.currentTurnScore + gameState.potentialScore))
                 ),
                 React.createElement('div', { className: "max-w-2xl mx-auto w-full" },
@@ -408,24 +413,24 @@ const GameUI = (props) => {
                           React.createElement('button', { 
                             onClick: onJoinGame, 
                             disabled: availableSlotsForJoin === 0, 
-                            className: "w-full py-5 sm:py-4 bg-green-600 hover:bg-green-700 rounded-lg text-2xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed disabled:scale-100" 
+                            className: "w-full v-btn-lg bg-green-600 hover:bg-green-700 rounded-lg text-2xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed disabled:scale-100" 
                           }, 
                             availableSlotsForJoin > 0 ? 'Попроситься в игру' : 'Нет свободных мест'
                           )
                         )
                       : gameState.isGameOver
                         ? (isHost
-                            ? React.createElement('button', { onClick: onNewGame, disabled: claimedPlayerCount < 2, className: "w-full py-3 sm:py-4 bg-blue-600 hover:bg-blue-700 rounded-lg text-2xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed disabled:scale-100" }, 'Новая Игра')
+                            ? React.createElement('button', { onClick: onNewGame, disabled: claimedPlayerCount < 2, className: "w-full v-btn-lg bg-blue-600 hover:bg-blue-700 rounded-lg text-2xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed disabled:scale-100" }, 'Новая Игра')
                             : null
                           )
                         : !gameState.isGameStarted 
                           ? (isHost
-                              ? React.createElement('button', { onClick: onStartOfficialGame, disabled: claimedPlayerCount < 2, className: "w-full py-5 sm:py-4 bg-blue-600 hover:bg-blue-700 rounded-lg text-2xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed disabled:scale-100" }, 'Начать игру')
+                              ? React.createElement('button', { onClick: onStartOfficialGame, disabled: claimedPlayerCount < 2, className: "w-full v-btn-lg bg-blue-600 hover:bg-blue-700 rounded-lg text-2xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed disabled:scale-100" }, 'Начать игру')
                               : React.createElement('div', { className: "text-center text-lg text-gray-400" }, 'Ожидание начала игры от хоста...')
                             )
                           : React.createElement('div', { className: "grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-4" },
-                              React.createElement('button', { onClick: onRollDice, disabled: !isMyTurn || !gameState.canRoll, className: "w-full py-2 sm:py-3 bg-green-600 hover:bg-green-700 rounded-lg text-xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed disabled:scale-100" }, rollButtonText),
-                              React.createElement('button', { onClick: onBankScore, disabled: !isMyTurn || !gameState.canBank, className: "w-full py-2 sm:py-3 bg-action-yellow hover:bg-hover-yellow text-slate-900 rounded-lg text-xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed disabled:scale-100" }, 'Записать')
+                              React.createElement('button', { onClick: onRollDice, disabled: !isMyTurn || !gameState.canRoll, className: "w-full v-btn-sm bg-green-600 hover:bg-green-700 rounded-lg text-xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed disabled:scale-100" }, rollButtonText),
+                              React.createElement('button', { onClick: onBankScore, disabled: !isMyTurn || !gameState.canBank, className: "w-full v-btn-sm bg-action-yellow hover:bg-hover-yellow text-slate-900 rounded-lg text-xl font-bold uppercase tracking-wider transition-all duration-300 transform hover:scale-105 shadow-lg disabled:bg-gray-500 disabled:cursor-not-allowed disabled:scale-100" }, 'Записать')
                             )
                 )
               )
