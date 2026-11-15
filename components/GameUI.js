@@ -369,9 +369,11 @@ const GameUI = (props) => {
                 )
               )
             ),
-            // pb-0: нижний отступ даёт только корневой контейнер (p-2/sm:p-4),
-            // как и сверху — иначе снизу копятся два паддинга и разрыв больше.
-            React.createElement('main', { className: `relative lg:col-span-3 bg-slate-900/70 rounded-xl border-2 flex flex-col justify-between min-h-0 px-2 sm:px-4 pt-2 sm:pt-4 pb-0 transition-all duration-500 ease-in-out ${isDragOver && isMyTurn ? 'border-green-400 shadow-2xl shadow-green-400/20' : 'border-slate-600'} ${isScoreboardExpanded ? 'hidden lg:flex' : 'flex'}`, onDragOver: (e) => {e.preventDefault(); onSetIsDragOver(true);}, onDrop: onDrop, onDragLeave: () => onSetIsDragOver(false) },
+            // flex-1: панель растягивается на всю высоту контентной обёртки,
+            // поэтому justify-between прижимает кнопки к реальному низу и
+            // нижний зазор = паддинг корня = верхнему зазору.
+            // pb-0: нижний отступ даёт только корневой контейнер (p-2/sm:p-4).
+            React.createElement('main', { className: `relative flex-1 lg:col-span-3 bg-slate-900/70 rounded-xl border-2 flex flex-col justify-between min-h-0 px-2 sm:px-4 pt-2 sm:pt-4 pb-0 transition-all duration-500 ease-in-out ${isDragOver && isMyTurn ? 'border-green-400 shadow-2xl shadow-green-400/20' : 'border-slate-600'} ${isScoreboardExpanded ? 'hidden lg:flex' : 'flex'}`, onDragOver: (e) => {e.preventDefault(); onSetIsDragOver(true);}, onDrop: onDrop, onDragLeave: () => onSetIsDragOver(false) },
               React.createElement(JoinRequestManager, { isHost, gameState, onJoinRequest }),
               React.createElement('div', { className: "w-full" },
                 React.createElement('div', { className: `w-full p-2 sm:p-3 v-mb text-center rounded-lg ${gameState.isGameOver ? 'bg-green-600' : 'bg-slate-800'} border border-slate-600 flex items-center justify-center v-band` },
