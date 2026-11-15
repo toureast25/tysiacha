@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tysiacha-cache-v1.21.0'; // Increment cache version
+const CACHE_NAME = 'tysiacha-cache-v1.22.0'; // Increment cache version
 const urlsToCache = [
   '.', // Кэшируем корневую директорию (эквивалент '/')
   'index.html',

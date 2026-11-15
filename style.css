@@ -23,15 +23,16 @@ html, body, #root {
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* Доступность: у тех, кто просил уменьшить движение, убираем перемещения,
-   оставляя мгновенную смену состояния (без укачивания). */
+/* Доступность: у тех, кто просил уменьшить движение, убираем НАВЯЗЧИВОЕ и
+   крупное перемещение (бесконечная пульсация, перелёт чипа, въезд снизу),
+   но оставляем короткую обратную связь на месте — переворот кубика и pop
+   очков. Это ядро игры (бросок виден всегда), а не декоративное движение,
+   поэтому его не глушим. */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
-    scroll-behavior: auto !important;
-  }
+  .player-active-pulse { animation: none !important; }
+  .points-fly { animation: none !important; opacity: 0 !important; }
+  .band-in { animation: none !important; transform: none !important; opacity: 1 !important; }
+  html { scroll-behavior: auto !important; }
 }
 .v-mb  { margin-bottom: var(--v-gap); }
 .v-mb-sm { margin-bottom: var(--v-gap-sm); }
