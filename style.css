@@ -29,6 +29,14 @@ html, body, #root {
    кнопки становятся ниже, сохраняя читаемость (min не даст схлопнуться). */
 .v-btn-lg { padding-top: clamp(0.5rem, 2.2dvh, 1.25rem); padding-bottom: clamp(0.5rem, 2.2dvh, 1.25rem); }
 .v-btn-sm { padding-top: clamp(0.375rem, 1.6dvh, 0.75rem); padding-bottom: clamp(0.375rem, 1.6dvh, 0.75rem); }
+/* Шрифты тоже привязаны к высоте экрана (dvh) с min/max, чтобы не мельчали
+   нечитаемо и не раздувались на высоких. Всё вертикальное — от высоты. */
+.fs-title { font-size: clamp(1.25rem, 3.4dvh, 2.25rem); }   /* «ТЫСЯЧА» */
+.fs-h2    { font-size: clamp(1.25rem, 3.2dvh, 1.875rem); }  /* «Игроки» */
+.fs-band  { font-size: clamp(0.95rem, 2.4dvh, 1.25rem); }   /* сообщение хода */
+.fs-score { font-size: clamp(1.75rem, 5.5dvh, 3rem); }      /* очки за ход */
+.fs-btn   { font-size: clamp(1.1rem, 3.2dvh, 1.5rem); }     /* крупные кнопки */
+.fs-btn-sm{ font-size: clamp(0.95rem, 2.6dvh, 1.25rem); }   /* Бросок/Записать */
 
 body {
   font-family: 'Roboto Condensed', sans-serif;
