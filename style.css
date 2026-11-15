@@ -17,6 +17,21 @@ html, body, #root {
   --v-gap:    clamp(0.25rem, 1.4dvh, 1rem);     /* основной вертикальный зазор */
   --v-gap-sm: clamp(0.125rem, 0.8dvh, 0.5rem);  /* малый зазор */
   --v-pad:    clamp(0.25rem, 1.2dvh, 0.875rem); /* вертикальный паддинг блоков */
+  /* Единая кривая движения: тяжёлый выезд с доводкой (ease-out-expo).
+     Все переходы и анимации игры опираются на неё — движение ощущается
+     взвешенным, а не «браузерным». Анимации только transform/opacity. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Доступность: у тех, кто просил уменьшить движение, убираем перемещения,
+   оставляя мгновенную смену состояния (без укачивания). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 .v-mb  { margin-bottom: var(--v-gap); }
 .v-mb-sm { margin-bottom: var(--v-gap-sm); }
@@ -148,5 +163,68 @@ body {
 
 .dice-fly-in {
   animation: dice-fly 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  will-change: transform, opacity;
+}
+
+/* --- 3D-переворот кубика при броске --- */
+/* Кубик крутится в 3D (rotateX+rotateY) с перспективой, затем тяжело
+   доводится к финальной грани базовой кривой. Даёт ощущение настоящей кости. */
+.dice-3d-wrap {
+  perspective: 600px;
+}
+@keyframes dice-flip {
+  0%   { transform: rotateX(0deg) rotateY(0deg) scale(0.9); }
+  35%  { transform: rotateX(220deg) rotateY(160deg) scale(1.08); }
+  70%  { transform: rotateX(360deg) rotateY(340deg) scale(1.02); }
+  100% { transform: rotateX(360deg) rotateY(360deg) scale(1); }
+}
+.dice-rolling-3d {
+  animation: dice-flip 0.7s var(--ease-out) both;
+  will-change: transform;
+}
+
+/* --- Pop числа очков за ход --- */
+/* При каждом изменении суммы цифра подпрыгивает (scale up→down→rest). */
+@keyframes score-pop {
+  0%   { transform: scale(0.8); }
+  45%  { transform: scale(1.18); }
+  75%  { transform: scale(0.96); }
+  100% { transform: scale(1); }
+}
+.score-pop {
+  animation: score-pop 0.45s var(--ease-out) both;
+  display: inline-block;
+  will-change: transform;
+}
+
+/* --- Полёт очков при записи --- */
+/* Чип с очками взлетает вверх и растворяется — связывает «Записать» с итогом. */
+@keyframes points-fly {
+  0%   { transform: translateY(0) scale(1); opacity: 1; }
+  100% { transform: translateY(-70px) scale(1.3); opacity: 0; }
+}
+.points-fly {
+  animation: points-fly 0.8s var(--ease-out) both;
+  will-change: transform, opacity;
+}
+
+/* --- Пульсация активного игрока в таблице --- */
+/* Мягкое «дыхание» жёлтого свечения, чтобы глаз находил чей ход. */
+@keyframes active-pulse {
+  0%, 100% { box-shadow: inset 0 0 14px 3px rgba(180, 183, 21, 0.22); }
+  50%      { box-shadow: inset 0 0 20px 6px rgba(180, 183, 21, 0.40); }
+}
+.player-active-pulse {
+  animation: active-pulse 1.8s var(--ease-out) infinite;
+}
+
+/* --- Въезд полосы сообщения хода --- */
+/* При смене сообщения блок поднимается снизу и проявляется. */
+@keyframes band-in {
+  0%   { transform: translateY(10px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+.band-in {
+  animation: band-in 0.4s var(--ease-out) both;
   will-change: transform, opacity;
 }

@@ -39,8 +39,10 @@ export const DiceIcon = ({ value, isSelected, onClick, onDragStart, onDoubleClic
       return React.createElement('div', { className: `${baseClasses} bg-slate-700/50 border-slate-600 border-dashed` });
   }
 
-  // Пока идёт бросок — кубик «трясётся» (анимация в style.css).
-  const rollingClass = isRolling ? ' dice-rolling' : '';
+  // Пока идёт бросок — кубик крутится в 3D (анимация в style.css).
+  // Перспектива задана на контейнере-сетке (см. GameUI.js), поэтому сам
+  // кубик получает только transform-анимацию переворота.
+  const rollingClass = isRolling ? ' dice-rolling-3d' : '';
 
   return React.createElement(
     'div',

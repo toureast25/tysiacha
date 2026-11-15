@@ -137,6 +137,8 @@ const GameUI = (props) => {
         if (spinTimerRef.current) clearTimeout(spinTimerRef.current);
         if (spinIntervalRef.current) clearInterval(spinIntervalRef.current);
         if (flyTimerRef.current) clearTimeout(flyTimerRef.current);
+        if (scorePopTimerRef.current) clearTimeout(scorePopTimerRef.current);
+        if (flyPointsTimerRef.current) clearTimeout(flyPointsTimerRef.current);
     }, []);
 
     // --- Анимация «прилёта» кубиков в поле «Отложено» ---
@@ -157,6 +159,44 @@ const GameUI = (props) => {
         }
         prevKeptLenRef.current = cur;
     }, [gameState.keptDiceThisTurn]);
+
+    // --- Pop числа «Очки за ход» ---
+    // Когда сумма очков за ход меняется, цифра подпрыгивает (score-pop).
+    const SCORE_POP_MS = 450;
+    const [scorePop, setScorePop] = React.useState(false);
+    const prevScoreRef = React.useRef(gameState.currentTurnScore + gameState.potentialScore);
+    const scorePopTimerRef = React.useRef(null);
+
+    React.useEffect(() => {
+        const cur = gameState.currentTurnScore + gameState.potentialScore;
+        if (cur !== prevScoreRef.current) {
+            prevScoreRef.current = cur;
+            setScorePop(false);
+            // перезапуск анимации: гасим и на следующем кадре включаем снова
+            if (scorePopTimerRef.current) clearTimeout(scorePopTimerRef.current);
+            requestAnimationFrame(() => setScorePop(true));
+            scorePopTimerRef.current = setTimeout(() => setScorePop(false), SCORE_POP_MS);
+        }
+    }, [gameState.currentTurnScore, gameState.potentialScore]);
+
+    // --- Полёт очков при записи ---
+    // Когда «Очки за ход» обнуляются с ненулевого значения (игрок нажал
+    // «Записать»), из поля вылетает чип с записанной суммой.
+    const POINTS_FLY_MS = 800;
+    const [flyPoints, setFlyPoints] = React.useState(null);
+    const prevTurnScoreRef = React.useRef(gameState.currentTurnScore);
+    const flyPointsTimerRef = React.useRef(null);
+
+    React.useEffect(() => {
+        const prev = prevTurnScoreRef.current;
+        const cur = gameState.currentTurnScore;
+        if (prev > 0 && cur === 0) {
+            setFlyPoints(prev);
+            if (flyPointsTimerRef.current) clearTimeout(flyPointsTimerRef.current);
+            flyPointsTimerRef.current = setTimeout(() => setFlyPoints(null), POINTS_FLY_MS);
+        }
+        prevTurnScoreRef.current = cur;
+    }, [gameState.currentTurnScore]);
 
 
     const handleCopyLink = () => {
@@ -270,7 +310,7 @@ const GameUI = (props) => {
                         const isHostPlayer = player.id === gameState.hostId;
                         const isActionable = isHost && player.isClaimed && player.id !== myPlayerId;
                 
-                        let headerClasses = `h-14 sm:h-16 px-0 py-0 text-center align-middle transition-all duration-300 relative border-r border-slate-600 last:border-r-0 ${index === gameState.currentPlayerIndex && gameState.isGameStarted && !gameState.isGameOver && player.isClaimed ? 'player-active' : 'bg-slate-700/50'}`;
+                        let headerClasses = `h-14 sm:h-16 px-0 py-0 text-center align-middle transition-all duration-300 relative border-r border-slate-600 last:border-r-0 ${index === gameState.currentPlayerIndex && gameState.isGameStarted && !gameState.isGameOver && player.isClaimed ? 'player-active player-active-pulse' : 'bg-slate-700/50'}`;
                         if (isActionable) {
                             headerClasses += ' cursor-pointer hover:bg-slate-600/60';
                         }
@@ -381,7 +421,9 @@ const GameUI = (props) => {
               React.createElement(JoinRequestManager, { isHost, gameState, onJoinRequest }),
               React.createElement('div', { className: "w-full" },
                 React.createElement('div', { className: `w-full p-2 sm:p-3 v-mb text-center rounded-lg ${gameState.isGameOver ? 'bg-green-600' : 'bg-slate-800'} border border-slate-600 flex items-center justify-center v-band` },
-                  React.createElement('p', { className: "fs-band font-semibold" }, displayMessage)
+                  // key по тексту: при смене сообщения React пересоздаёт <p>,
+                  // и анимация въезда (band-in) проигрывается заново.
+                  React.createElement('p', { key: displayMessage, className: "fs-band font-semibold band-in" }, displayMessage)
                 ),
                 React.createElement('div', { className: "w-full flex justify-center md:justify-end" },
                   React.createElement('div', { className: "p-2 sm:p-3 rounded-lg bg-black/40 border border-slate-700 w-full md:w-auto md:min-w-[300px]" },
@@ -398,15 +440,24 @@ const GameUI = (props) => {
                 // Ширина сетки привязана и к высоте вьюпорта (42dvh): кубики
                 // aspect-square, поэтому их высота = ширина. На низких экранах
                 // сетка сжимается пропорционально и не вылезает за экран.
-                React.createElement('div', { className: "w-full mx-auto grid grid-cols-5 gap-2 sm:gap-3", style: { maxWidth: 'min(420px, 46dvh)' } },
+                React.createElement('div', { className: "w-full mx-auto grid grid-cols-5 gap-2 sm:gap-3", style: { maxWidth: 'min(420px, 46dvh)', perspective: '600px' } },
                   gameState.diceOnBoard.map((value, i) => React.createElement(DiceIcon, { key: `board-${i}`, value: rolling ? (spinValues[i] || value) : value, isRolling: rolling, isSelected: !rolling && gameState.selectedDiceIndices.includes(i), onClick: isMyTurn ? () => onToggleDieSelection(i) : null, onDragStart: isMyTurn ? (e) => onDragStart(e, i) : null, onDoubleClick: isMyTurn ? () => onDieDoubleClick(i) : null })),
                   Array.from({ length: 5 - gameState.diceOnBoard.length }).map((_, i) => React.createElement(DiceIcon, { key: `placeholder-${i}`, value: 0 }))
                 )
               ),
               React.createElement('div', { className: "w-full" },
                  showSkipButton && React.createElement('div', {className: 'text-center v-mb-sm'}, React.createElement('button', {onClick: onSkipTurn, className: 'max-w-full px-4 v-btn-sm bg-orange-600 hover:bg-orange-700 rounded-lg font-bold animate-pulse'}, React.createElement('span', {className: 'inline-block max-w-full truncate align-middle'}, `Пропустить ход ${currentPlayer.name}`))),
-                React.createElement('div', { className: "text-center v-mb" },
-                  React.createElement('p', { className: "fs-band" }, 'Очки за ход: ', React.createElement('span', { className: "font-ruslan fs-score text-green-400 break-all" }, gameState.currentTurnScore + gameState.potentialScore))
+                React.createElement('div', { className: "text-center v-mb relative" },
+                  React.createElement('p', { className: "fs-band" }, 'Очки за ход: ', React.createElement('span', { className: `font-ruslan fs-score text-green-400 break-all${scorePop ? ' score-pop' : ''}` }, gameState.currentTurnScore + gameState.potentialScore)),
+                  // Летящий чип: появляется в момент «Записать» и улетает вверх.
+                  // Внешний span центрирует (translate), внутренний летит (своя
+                  // transform-анимация) — иначе они бы перезаписали друг друга.
+                  flyPoints !== null && React.createElement('span', {
+                    className: "pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+                  }, React.createElement('span', {
+                    key: flyPoints,
+                    className: "points-fly block font-ruslan fs-score text-green-300 drop-shadow-[0_0_8px_rgba(74,222,128,0.8)]"
+                  }, `+${flyPoints}`))
                 ),
                 // mb = межкнопочный gap (gap-2 sm:gap-4): зазор под нижней
                 // кнопкой равен расстоянию между кнопками.
