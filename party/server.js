@@ -119,7 +119,15 @@ export class TysiachaRoom extends Server {
 
     // --- применение интента через общий редьюсер + персист + рассылка ---
     applyAction(action) {
-        const next = gameReducer(this.game, action);
+        if (!action || !action.payload) action = { ...action, payload: {} };
+        let next;
+        try {
+            next = gameReducer(this.game, action);
+        } catch (e) {
+            // Кривой payload от клиента не должен ронять комнату.
+            console.error('[room] reducer failed', action && action.type, e);
+            return false;
+        }
         if (next === this.game) return false; // редьюсер ничего не изменил
         this.game = next;
         this.persist();
@@ -423,14 +431,12 @@ export class TysiachaRoom extends Server {
                 const players = Array.isArray(this.game?.players) ? this.game.players : [];
                 const claimed = players.filter((p) => p && p.isClaimed);
                 const host = players.find((p) => p && p.id === this.game?.hostId);
-                return Response.json(
-                    {
-                        exists: claimed.length > 0,
-                        hostName: host?.name || null,
-                        playerCount: claimed.length,
-                    },
-                    { headers: this.corsHeaders() }
-                );
+                const body = {
+                    exists: claimed.length > 0,
+                    hostName: host?.name || null,
+                    playerCount: claimed.length,
+                };
+                return Response.json(body, { headers: this.corsHeaders() });
             } catch (e) {
                 console.error('[room] check failed', e);
                 return Response.json(
