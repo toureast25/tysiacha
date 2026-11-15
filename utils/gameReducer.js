@@ -52,7 +52,7 @@ export function gameReducer(state, action) {
         if (newState.spectators.some(s => s.id === sessionId)) return state;
         if (asSpectator) {
             // Вытесняем старого зрителя с тем же именем: при новой вкладке /
-            // инкогнито / после очистки sessionStorage клиент получает новый
+            // инкогнито / после очистки localStorage клиент получает новый
             // sessionId, и без этого один человек числился в зрителях дважды.
             const others = newState.spectators.filter(s => s.name !== playerName);
             return { ...newState, spectators: [...others, { name: playerName, id: sessionId }] };

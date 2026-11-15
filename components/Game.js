@@ -23,7 +23,12 @@ const Game = ({ roomCode, playerName, initialMode, localConfig, asSpectator = fa
   const [myPlayerId, setMyPlayerId] = React.useState(null);
   const [isSpectator, setIsSpectator] = React.useState(false);
 
-  const mySessionIdRef = React.useRef(sessionStorage.getItem('tysiacha-sessionId') || `sid_${Math.random().toString(36).substr(2, 9)}`);
+  // Идентичность живёт в localStorage, а не sessionStorage: sessionStorage
+  // умирает при закрытии всех вкладок, и при возврате игрок получал новый
+  // sessionId -> сервер не узнавал его и в начатой партии делал зрителем,
+  // оставляя настоящий слот занятым офлайн-игроком. localStorage переживает
+  // закрытие браузера, поэтому возврат = reconnect в свой же слот.
+  const mySessionIdRef = React.useRef(localStorage.getItem('tysiacha-sessionId') || `sid_${Math.random().toString(36).substr(2, 9)}`);
   const wakeLockRef = React.useRef(null);
 
   // 4. Init Network Hook (PartyKit room). Сервер — единственный источник истины.
@@ -62,7 +67,7 @@ const Game = ({ roomCode, playerName, initialMode, localConfig, asSpectator = fa
   React.useEffect(() => {
     if (isLocalMode) return;
 
-    sessionStorage.setItem('tysiacha-sessionId', mySessionIdRef.current);
+    localStorage.setItem('tysiacha-sessionId', mySessionIdRef.current);
     if (gameState) {
         const me = gameState.players.find(p => p.sessionId === mySessionIdRef.current);
         setMyPlayerId(me ? me.id : null);

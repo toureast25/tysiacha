@@ -97,8 +97,9 @@ const App = () => {
 
   const handleExitGame = React.useCallback(() => {
     localStorage.removeItem('tysiacha-session');
-    // Critical fix: Remove session ID so we don't reconnect as the old player
-    sessionStorage.removeItem('tysiacha-sessionId');
+    // Critical fix: Remove session ID so we don't reconnect as the old player.
+    // sessionId живёт в localStorage (см. Game.js) — чистим его там же.
+    localStorage.removeItem('tysiacha-sessionId');
     setGameProps({});
     setScreen('LOBBY');
     setInitialRoomCode(null); 
