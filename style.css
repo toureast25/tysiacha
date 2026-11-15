@@ -53,6 +53,24 @@ html, body, #root {
   color: #fde68a; /* amber-200 */
 }
 
+/* Разделители столбцов в строке итогов (tfoot). sticky tfoot + border-collapse
+   в Chrome теряет border, поэтому рисуем правую границу inset-тенью — она
+   переживает sticky. Последний столбец без разделителя (как last:border-r-0). */
+.tfoot-divider {
+  box-shadow: inset -1px 0 0 0 #475569; /* slate-600, как border-r в шапке */
+}
+.tfoot-divider:last-child {
+  box-shadow: none;
+}
+/* Когда ячейка итогов ещё и активна — совмещаем разделитель и свечение
+   (оба живут в box-shadow, поэтому перечисляем обе тени в одном правиле). */
+.tfoot-divider.player-active-foot {
+  box-shadow: inset -1px 0 0 0 #475569, inset 0 0 14px 3px rgba(180, 183, 21, 0.30);
+}
+.tfoot-divider.player-active-foot:last-child {
+  box-shadow: inset 0 0 14px 3px rgba(180, 183, 21, 0.30);
+}
+
 body {
   font-family: 'Roboto Condensed', sans-serif;
   /* Серый круглый (эллиптический) градиент от центра */

@@ -361,7 +361,11 @@ const GameUI = (props) => {
                      React.createElement('tr', null, gameState.players.map((player) => {
                        const index = player.id;
                        const hasHistory = player.isClaimed || player.isSpectator || player.name !== `Игрок ${player.id + 1}`;
-                       return React.createElement('td', { key: `total-score-${player.id}`, className: `h-8 sm:h-10 px-1 sm:px-2 text-center text-lg font-mono align-middle transition-colors duration-300 border-r border-slate-600 last:border-r-0 ${index === gameState.currentPlayerIndex && gameState.isGameStarted && !gameState.isGameOver && player.isClaimed ? 'player-active-foot' : 'bg-slate-900/50'}` }, 
+                       // Разделители столбцов рисуем inset-тенью (tfoot-divider),
+                       // а не border: sticky tfoot + border-collapse в Chrome
+                       // теряет border, а тень переживает sticky. Цвет slate-600,
+                       // как в шапке. Активное свечение комбинируется в CSS.
+                       return React.createElement('td', { key: `total-score-${player.id}`, className: `tfoot-divider h-8 sm:h-10 px-1 sm:px-2 text-center text-lg font-mono align-middle transition-colors duration-300 ${index === gameState.currentPlayerIndex && gameState.isGameStarted && !gameState.isGameOver && player.isClaimed ? 'player-active-foot' : 'bg-slate-900/50'}` }, 
                          hasHistory ? calculateTotalScore(player) : ''
                        );
                      }))
