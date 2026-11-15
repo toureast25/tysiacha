@@ -1,60 +1,68 @@
-
 import React from 'react';
 
+// Раскладка точек на грани (позиции внутри грани-квадрата).
+const DOTS = {
+  1: ['center'],
+  2: ['top-left', 'bottom-right'],
+  3: ['top-left', 'center', 'bottom-right'],
+  4: ['top-left', 'top-right', 'bottom-left', 'bottom-right'],
+  5: ['top-left', 'top-right', 'center', 'bottom-left', 'bottom-right'],
+  6: ['top-left', 'top-right', 'mid-left', 'mid-right', 'bottom-left', 'bottom-right'],
+};
+
+const DOT_POS = {
+  'center': 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2',
+  'top-left': 'top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2',
+  'top-right': 'top-1/4 right-1/4 translate-x-1/2 -translate-y-1/2',
+  'bottom-left': 'bottom-1/4 left-1/4 -translate-x-1/2 translate-y-1/2',
+  'bottom-right': 'bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2',
+  'mid-left': 'top-1/2 left-1/4 -translate-x-1/2 -translate-y-1/2',
+  'mid-right': 'top-1/2 right-1/4 -translate-x-1/2 -translate-y-1/2',
+};
+
+// Одна грань куба: квадрат с точками нужного значения.
+const Face = ({ face, value }) =>
+  React.createElement(
+    'div',
+    { className: `dice-face dice-face--${face}` },
+    DOTS[value] && DOTS[value].map((pos) =>
+      React.createElement('div', {
+        key: pos,
+        className: `absolute w-[16%] h-[16%] bg-slate-900 rounded-full ${DOT_POS[pos]}`,
+      })
+    )
+  );
+
+// Кубик — настоящий 3D-объект из шести граней (см. style.css). В покое
+// развёрнут гранью со значением `value` к зрителю; при isRolling крутится.
 export const DiceIcon = ({ value, isSelected, onClick, onDragStart, onDoubleClick, isRolling }) => {
-  const dots = {
-    1: ['center'],
-    2: ['top-left', 'bottom-right'],
-    3: ['top-left', 'center', 'bottom-right'],
-    4: ['top-left', 'top-right', 'bottom-left', 'bottom-right'],
-    5: ['top-left', 'top-right', 'center', 'bottom-left', 'bottom-right'],
-    6: ['top-left', 'top-right', 'mid-left', 'mid-right', 'bottom-left', 'bottom-right'],
-  };
-
-  const dotClasses = {
-      'center': 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2',
-      'top-left': 'top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2',
-      'top-right': 'top-1/4 right-1/4 translate-x-1/2 -translate-y-1/2',
-      'bottom-left': 'bottom-1/4 left-1/4 -translate-x-1/2 translate-y-1/2',
-      'bottom-right': 'bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2',
-      'mid-left': 'top-1/2 left-1/4 -translate-x-1/2 -translate-y-1/2',
-      'mid-right': 'top-1/2 right-1/4 translate-x-1/2 -translate-y-1/2',
-  }
-  
-  // --- РАЗМЕР КУБИКОВ ---
-  // Ширину задаёт контейнер: сетка из 5 равных колонок (см. GameUI.js).
-  // Поэтому кубики всегда влезают в экран и не наезжают друг на друга.
-  const baseClasses = "w-full aspect-square bg-slate-200 rounded-lg shadow-md flex items-center justify-center relative border-2 transition-all duration-200";
-  
-  let stateClasses = "border-slate-400";
-  if (onClick) {
-      stateClasses += " cursor-pointer";
-  }
-
-  if (isSelected) {
-      stateClasses = "border-highlight scale-105 shadow-lg shadow-highlight/50 cursor-pointer";
-  }
-  
+  // Пустая ячейка (костей меньше пяти) — плоский пунктирный слот.
   if (value === 0) {
-      return React.createElement('div', { className: `${baseClasses} bg-slate-700/50 border-slate-600 border-dashed` });
+    return React.createElement('div', {
+      className: 'w-full aspect-square bg-slate-700/50 border-2 border-dashed border-slate-600 rounded-lg',
+    });
   }
 
-  // Пока идёт бросок — кубик крутится в 3D (анимация в style.css).
-  // Перспектива задана на контейнере-сетке (см. GameUI.js), поэтому сам
-  // кубик получает только transform-анимацию переворота.
-  const rollingClass = isRolling ? ' dice-rolling-3d' : '';
+  const cubeClasses = `dice-cube${isRolling ? ' dice-rolling-3d' : ''}${isSelected ? ' is-selected' : ''}`;
 
   return React.createElement(
     'div',
     {
-      className: `${baseClasses} ${stateClasses}${rollingClass}`,
+      className: 'dice-3d-wrap w-full aspect-square' + (onClick ? ' cursor-pointer' : ''),
       onClick: onClick,
       onDoubleClick: onDoubleClick,
       draggable: !!onDragStart,
-      onDragStart: onDragStart
+      onDragStart: onDragStart,
     },
-    value > 0 && dots[value] && dots[value].map(pos => 
-      React.createElement('div', { key: pos, className: `absolute w-[18%] h-[18%] bg-slate-900 rounded-full ${dotClasses[pos]}` })
+    React.createElement(
+      'div',
+      { className: cubeClasses, 'data-value': value },
+      React.createElement(Face, { face: 'front', value: 1 }),
+      React.createElement(Face, { face: 'back', value: 6 }),
+      React.createElement(Face, { face: 'right', value: 3 }),
+      React.createElement(Face, { face: 'left', value: 4 }),
+      React.createElement(Face, { face: 'top', value: 2 }),
+      React.createElement(Face, { face: 'bottom', value: 5 })
     )
   );
 };
@@ -76,7 +84,7 @@ export const SmallDiceIcon = ({ value, isFlying }) => {
       'bottom-left': 'bottom-1/4 left-1/4 -translate-x-1/2 translate-y-1/2',
       'bottom-right': 'bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2',
       'mid-left': 'top-1/2 left-1/4 -translate-x-1/2 -translate-y-1/2',
-      'mid-right': 'top-1/2 right-1/4 translate-x-1/2 -translate-y-1/2',
+      'mid-right': 'top-1/2 right-1/4 -translate-x-1/2 -translate-y-1/2',
   }
   
   const flyClass = isFlying ? ' dice-fly-in' : '';

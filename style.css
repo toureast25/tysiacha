@@ -167,25 +167,69 @@ body {
   will-change: transform, opacity;
 }
 
-/* --- 3D-переворот кубика при броске --- */
-/* Кубик крутится в 3D (rotateX+rotateY) с перспективой, затем тяжело
-   доводится к финальной грани базовой кривой. Даёт ощущение настоящей кости. */
+/* --- Настоящий 3D-кубик (CSS, без WebGL) --- */
+/* Кость собрана из шести граней-квадратов, повёрнутых в 3D. В покое кубик
+   развёрнут нужной гранью к зрителю (rotate по значению), при броске крутится
+   вокруг обеих осей. Перспектива на обёртке, грани — preserve-3d. */
 .dice-3d-wrap {
-  perspective: 600px;
+  perspective: 700px;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-/* Перспектива зашита прямо в transform каждого кубика (perspective(700px)),
-   а не только на родителе: так переворот гарантированно объёмный в каждом
-   браузере, независимо от того, как grid-контейнер применяет перспективу. */
-@keyframes dice-flip {
-  0%   { transform: perspective(700px) rotateX(0deg) rotateY(0deg) scale(0.9); }
-  35%  { transform: perspective(700px) rotateX(220deg) rotateY(160deg) scale(1.08); }
-  70%  { transform: perspective(700px) rotateX(360deg) rotateY(340deg) scale(1.02); }
-  100% { transform: perspective(700px) rotateX(360deg) rotateY(360deg) scale(1); }
-}
-.dice-rolling-3d {
-  animation: dice-flip 0.7s var(--ease-out) both;
+.dice-cube {
+  --s: clamp(48px, 12dvh, 72px);   /* ребро куба */
+  position: relative;
+  width: var(--s);
+  height: var(--s);
   transform-style: preserve-3d;
+  transition: transform 0.5s var(--ease-out);
   will-change: transform;
+}
+.dice-face {
+  position: absolute;
+  inset: 0;
+  background: #e2e8f0;            /* slate-200 */
+  border: 2px solid #94a3b8;      /* slate-400 */
+  border-radius: 0.5rem;
+  box-shadow: inset 0 0 6px rgba(15, 23, 42, 0.15);
+  backface-visibility: hidden;
+}
+/* Ориентация граней: каждая повёрнута и выдвинута на половину ребра. */
+.dice-face--front  { transform: rotateY(0deg)    translateZ(calc(var(--s) / 2)); }
+.dice-face--back   { transform: rotateY(180deg)  translateZ(calc(var(--s) / 2)); }
+.dice-face--right  { transform: rotateY(90deg)   translateZ(calc(var(--s) / 2)); }
+.dice-face--left   { transform: rotateY(-90deg)  translateZ(calc(var(--s) / 2)); }
+.dice-face--top    { transform: rotateX(90deg)   translateZ(calc(var(--s) / 2)); }
+.dice-face--bottom { transform: rotateX(-90deg)  translateZ(calc(var(--s) / 2)); }
+
+/* Поворот куба, чтобы нужное значение смотрело на зрителя.
+   Раскладка граней (сумма противоположных = 7):
+   front=1, back=6, right=3, left=4, top=2, bottom=5. */
+.dice-cube[data-value="1"] { transform: rotateY(0deg)    rotateX(0deg); }
+.dice-cube[data-value="6"] { transform: rotateY(180deg)  rotateX(0deg); }
+.dice-cube[data-value="3"] { transform: rotateY(-90deg)  rotateX(0deg); }
+.dice-cube[data-value="4"] { transform: rotateY(90deg)   rotateX(0deg); }
+.dice-cube[data-value="2"] { transform: rotateY(0deg)    rotateX(-90deg); }
+.dice-cube[data-value="5"] { transform: rotateY(0deg)    rotateX(90deg); }
+
+/* Выбранная кость — подсветка грани-фронта. */
+.dice-cube.is-selected .dice-face {
+  border-color: #fbbf24;          /* highlight */
+  background: #fef3c7;
+}
+
+/* Бросок: кубик крутится в 3D вокруг обеих осей, затем тяжело доводится. */
+@keyframes dice-spin {
+  0%   { transform: rotateX(0deg)   rotateY(0deg)   scale(0.9); }
+  30%  { transform: rotateX(240deg) rotateY(180deg) scale(1.08); }
+  65%  { transform: rotateX(480deg) rotateY(420deg) scale(1.02); }
+  100% { transform: rotateX(720deg) rotateY(720deg) scale(1); }
+}
+.dice-cube.dice-rolling-3d {
+  animation: dice-spin 0.7s var(--ease-out) both;
 }
 
 /* --- Pop числа очков за ход --- */
