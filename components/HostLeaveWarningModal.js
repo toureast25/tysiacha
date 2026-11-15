@@ -5,7 +5,7 @@ const HostLeaveWarningModal = ({ onClose }) => {
   return React.createElement(
     'div',
     {
-      className: "fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm",
+      className: "fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3",
       onClick: onClose,
       'aria-modal': "true",
       role: "dialog"
@@ -13,7 +13,7 @@ const HostLeaveWarningModal = ({ onClose }) => {
     React.createElement(
       'div',
       {
-        className: "relative w-full max-w-md bg-slate-800 text-gray-300 rounded-2xl shadow-2xl border-2 border-yellow-500 flex flex-col p-6 animate-bounce-short",
+        className: "relative w-full max-w-md max-h-[90dvh] overflow-y-auto bg-slate-800 text-gray-300 rounded-2xl shadow-2xl border-2 border-yellow-500 flex flex-col p-4 sm:p-6 animate-bounce-short",
         onClick: e => e.stopPropagation()
       },
       React.createElement(

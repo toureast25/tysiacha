@@ -5,7 +5,7 @@ const RulesModal = ({ onClose }) => {
   return React.createElement(
     'div',
     {
-      className: "fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm",
+      className: "fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3",
       onClick: onClose,
       'aria-modal': "true",
       role: "dialog"
@@ -13,7 +13,7 @@ const RulesModal = ({ onClose }) => {
     React.createElement(
       'div',
       {
-        className: "relative w-full max-w-2xl max-h-[90vh] bg-slate-800 text-gray-300 rounded-2xl shadow-2xl border border-slate-600 flex flex-col",
+        className: "relative w-full max-w-2xl max-h-[90vh] max-h-[90dvh] bg-slate-800 text-gray-300 rounded-2xl shadow-2xl border border-slate-600 flex flex-col",
         onClick: e => e.stopPropagation()
       },
       React.createElement(

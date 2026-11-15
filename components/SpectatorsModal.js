@@ -5,7 +5,7 @@ const SpectatorsModal = ({ spectators, onClose }) => {
   return React.createElement(
     'div',
     {
-      className: "fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm",
+      className: "fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3",
       onClick: onClose,
       'aria-modal': "true",
       role: "dialog"
@@ -36,7 +36,7 @@ const SpectatorsModal = ({ spectators, onClose }) => {
       ),
       React.createElement(
         'main',
-        { className: "p-4 sm:p-6 overflow-y-auto max-h-[60vh] custom-scrollbar" },
+        { className: "p-4 sm:p-6 overflow-y-auto max-h-[60vh] max-h-[60dvh] custom-scrollbar" },
         spectators.length > 0
           ? React.createElement('ul', { className: "space-y-2" },
               spectators.map((spectator, index) =>

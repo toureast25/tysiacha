@@ -126,11 +126,11 @@ const App = () => {
   return React.createElement(
     'main',
     {
-      className: "w-full h-full text-white",
+      className: "w-full min-h-[100dvh] text-white",
     },
     React.createElement(
       'div',
-      { className: "w-full h-full flex items-center justify-center" },
+      { className: "w-full min-h-[100dvh] flex items-center justify-center px-3 py-4" },
       renderScreen()
     )
   );

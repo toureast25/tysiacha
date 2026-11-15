@@ -1,15 +1,23 @@
 
 html, body, #root {
-  height: 100%;
+  min-height: 100%;
   margin: 0;
   padding: 0;
-  overflow: hidden; /* Prevents the whole page from scrolling */
 }
 
 body {
   font-family: 'Roboto Condensed', sans-serif;
   /* Серый круглый (эллиптический) градиент от центра */
   background: radial-gradient(ellipse at center, #097763 0%, #2e193d 100%);
+  background-attachment: fixed;
+  overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* На тач-устройствах hover-эффекты «залипают» после тапа: масштаб по
+   наведению там не нужен, иначе кнопка остаётся увеличенной. */
+@media (hover: none) {
+  [class*="hover:scale-"]:hover { transform: none !important; }
 }
 
 .font-ruslan {

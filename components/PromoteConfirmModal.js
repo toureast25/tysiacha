@@ -7,7 +7,7 @@ const PromoteConfirmModal = ({ player, onConfirm, onCancel }) => {
   return React.createElement(
     'div',
     {
-      className: "fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm",
+      className: "fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3",
       onClick: onCancel,
       'aria-modal': "true",
       role: "dialog"
@@ -15,7 +15,7 @@ const PromoteConfirmModal = ({ player, onConfirm, onCancel }) => {
     React.createElement(
       'div',
       {
-        className: "relative w-full max-w-md bg-slate-800 text-gray-300 rounded-2xl shadow-2xl border border-slate-600 flex flex-col p-6",
+        className: "relative w-full max-w-md max-h-[90dvh] overflow-y-auto bg-slate-800 text-gray-300 rounded-2xl shadow-2xl border border-slate-600 flex flex-col p-4 sm:p-6",
         onClick: e => e.stopPropagation()
       },
       React.createElement(

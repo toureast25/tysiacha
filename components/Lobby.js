@@ -139,7 +139,7 @@ const Lobby = ({ onStartGame, initialRoomCode }) => {
 
   return React.createElement(
     'div',
-    { className: "w-full max-w-md p-6 sm:p-8 bg-slate-800/80 backdrop-blur-md rounded-xl shadow-2xl border border-slate-700 text-center relative" },
+    { className: "w-full max-w-md p-4 sm:p-6 lg:p-8 bg-slate-800/80 backdrop-blur-md rounded-xl shadow-2xl border border-slate-700 text-center relative" },
     !showLocalSetup ? React.createElement(React.Fragment, null,
         React.createElement('h2', { className: "font-ruslan text-2xl sm:text-4xl lg:text-5xl text-title-yellow mb-4 sm:mb-6" }, 'Вход в игру'),
         React.createElement(
