@@ -270,7 +270,7 @@ const GameUI = (props) => {
                         const isHostPlayer = player.id === gameState.hostId;
                         const isActionable = isHost && player.isClaimed && player.id !== myPlayerId;
                 
-                        let headerClasses = `h-14 sm:h-16 px-0 py-0 text-center align-middle transition-all duration-300 relative border-r border-slate-600 last:border-r-0 ${index === gameState.currentPlayerIndex && gameState.isGameStarted && !gameState.isGameOver && player.isClaimed ? 'bg-highlight text-slate-900' : 'bg-slate-700/50'}`;
+                        let headerClasses = `h-14 sm:h-16 px-0 py-0 text-center align-middle transition-all duration-300 relative border-r border-slate-600 last:border-r-0 ${index === gameState.currentPlayerIndex && gameState.isGameStarted && !gameState.isGameOver && player.isClaimed ? 'player-active' : 'bg-slate-700/50'}`;
                         if (isActionable) {
                             headerClasses += ' cursor-pointer hover:bg-slate-600/60';
                         }
@@ -361,7 +361,7 @@ const GameUI = (props) => {
                      React.createElement('tr', null, gameState.players.map((player) => {
                        const index = player.id;
                        const hasHistory = player.isClaimed || player.isSpectator || player.name !== `Игрок ${player.id + 1}`;
-                       return React.createElement('td', { key: `total-score-${player.id}`, className: `h-8 sm:h-10 px-1 sm:px-2 text-center text-lg font-mono align-middle transition-colors duration-300 border-r border-slate-600 last:border-r-0 ${index === gameState.currentPlayerIndex && gameState.isGameStarted && !gameState.isGameOver && player.isClaimed ? 'bg-highlight/80 text-slate-900' : 'bg-slate-900/50'}` }, 
+                       return React.createElement('td', { key: `total-score-${player.id}`, className: `h-8 sm:h-10 px-1 sm:px-2 text-center text-lg font-mono align-middle transition-colors duration-300 border-r border-slate-600 last:border-r-0 ${index === gameState.currentPlayerIndex && gameState.isGameStarted && !gameState.isGameOver && player.isClaimed ? 'player-active-foot' : 'bg-slate-900/50'}` }, 
                          hasHistory ? calculateTotalScore(player) : ''
                        );
                      }))
