@@ -110,32 +110,25 @@ const GameUI = (props) => {
     // значениях. Работает одинаково для игрока и зрителя — все видят бросок.
     const ROLL_ANIM_MS = 700;
     const [rolling, setRolling] = React.useState(false);
-    const [spinValues, setSpinValues] = React.useState([]);
     const lastNonceRef = React.useRef(gameState.rollNonce);
     const spinTimerRef = React.useRef(null);
-    const spinIntervalRef = React.useRef(null);
 
     React.useEffect(() => {
         const nonce = gameState.rollNonce || 0;
         if (nonce === lastNonceRef.current) return;
         lastNonceRef.current = nonce;
-        const count = Math.max(gameState.diceOnBoard.length, 1);
+        // Значения НЕ подменяем: кубик просто кувыркается CSS-анимацией
+        // (dice-spin) и сам останавливается на реальной грани. Подмена
+        // значений раньше доворачивала куб под каждое случайное число —
+        // из-за этого точки «перетекали» на лицевой грани.
         setRolling(true);
-        const rand = () => Array.from({ length: count }, () => 1 + Math.floor(Math.random() * 6));
-        setSpinValues(rand());
-        if (spinIntervalRef.current) clearInterval(spinIntervalRef.current);
-        spinIntervalRef.current = setInterval(() => setSpinValues(rand()), 90);
         if (spinTimerRef.current) clearTimeout(spinTimerRef.current);
-        spinTimerRef.current = setTimeout(() => {
-            setRolling(false);
-            if (spinIntervalRef.current) { clearInterval(spinIntervalRef.current); spinIntervalRef.current = null; }
-        }, ROLL_ANIM_MS);
+        spinTimerRef.current = setTimeout(() => setRolling(false), ROLL_ANIM_MS);
     }, [gameState.rollNonce]);
 
     // Чистим таймеры при размонтировании.
     React.useEffect(() => () => {
         if (spinTimerRef.current) clearTimeout(spinTimerRef.current);
-        if (spinIntervalRef.current) clearInterval(spinIntervalRef.current);
         if (flyTimerRef.current) clearTimeout(flyTimerRef.current);
         if (scorePopTimerRef.current) clearTimeout(scorePopTimerRef.current);
         if (flyPointsTimerRef.current) clearTimeout(flyPointsTimerRef.current);
@@ -441,7 +434,7 @@ const GameUI = (props) => {
                 // aspect-square, поэтому их высота = ширина. На низких экранах
                 // сетка сжимается пропорционально и не вылезает за экран.
                 React.createElement('div', { className: "w-full mx-auto grid grid-cols-5 gap-2 sm:gap-3", style: { maxWidth: 'min(420px, 46dvh)', perspective: '600px' } },
-                  gameState.diceOnBoard.map((value, i) => React.createElement(DiceIcon, { key: `board-${i}`, value: rolling ? (spinValues[i] || value) : value, isRolling: rolling, isSelected: !rolling && gameState.selectedDiceIndices.includes(i), onClick: isMyTurn ? () => onToggleDieSelection(i) : null, onDragStart: isMyTurn ? (e) => onDragStart(e, i) : null, onDoubleClick: isMyTurn ? () => onDieDoubleClick(i) : null })),
+                  gameState.diceOnBoard.map((value, i) => React.createElement(DiceIcon, { key: `board-${i}`, value: value, isRolling: rolling, isSelected: !rolling && gameState.selectedDiceIndices.includes(i), onClick: isMyTurn ? () => onToggleDieSelection(i) : null, onDragStart: isMyTurn ? (e) => onDragStart(e, i) : null, onDoubleClick: isMyTurn ? () => onDieDoubleClick(i) : null })),
                   Array.from({ length: 5 - gameState.diceOnBoard.length }).map((_, i) => React.createElement(DiceIcon, { key: `placeholder-${i}`, value: 0 }))
                 )
               ),
