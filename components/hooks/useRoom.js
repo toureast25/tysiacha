@@ -32,6 +32,7 @@ export const useRoom = ({
     playerName,
     isLocalMode,
     mySessionId,
+    deviceId,
     dispatch,
     asSpectator = false,
 }) => {
@@ -117,7 +118,7 @@ export const useRoom = ({
 
                 // Вход/переподключение + запрос актуального снапшота.
                 // asSpectator обязателен: без него сервер всегда впускает как игрока.
-                rawSend({ type: 'HELLO', sessionId: mySessionId, playerName, asSpectator });
+                rawSend({ type: 'HELLO', sessionId: mySessionId, deviceId, playerName, asSpectator });
                 rawSend({ type: 'REQUEST_STATE', sessionId: mySessionId });
 
                 // Сброс накопленных интентов (те же msgId — сервер отсечёт повторы).
@@ -166,7 +167,7 @@ export const useRoom = ({
                 wsRef.current = null;
             }
         };
-    }, [roomCode, playerName, isLocalMode, mySessionId, dispatch, rawSend, asSpectator]);
+    }, [roomCode, playerName, isLocalMode, mySessionId, deviceId, dispatch, rawSend, asSpectator]);
 
     return { connectionStatus, sendAction, sendLeave };
 };

@@ -36,16 +36,26 @@ export function gameReducer(state, action) {
 
   switch (action.type) {
     case 'PLAYER_JOIN': {
-        const { playerName, sessionId, asSpectator } = action.payload;
+        const { playerName, sessionId, deviceId, asSpectator } = action.payload;
         // Возврат на свой же слот: переводим в online, иначе после обрыва
         // игрок оставался offline при живом соединении и sweep снимал его с хода.
-        const ownSlot = newState.players.find(p => p.isClaimed && p.sessionId === sessionId);
+        // Слот узнаётся и по sessionId (та же вкладка), и по deviceId (то же
+        // устройство после закрытия браузера — sessionId уже новый).
+        const ownSlot = newState.players.find(p => p.isClaimed && (
+            p.sessionId === sessionId ||
+            (deviceId && p.deviceId === deviceId)
+        ));
         if (ownSlot) {
-            if (ownSlot.status === 'online') return state;
+            // Перепривязываем актуальный sessionId к слоту (он мог смениться)
+            // и запоминаем deviceId, если он ещё не был записан.
+            const needsRebind = ownSlot.sessionId !== sessionId || (deviceId && ownSlot.deviceId !== deviceId);
+            if (ownSlot.status === 'online' && !needsRebind) return state;
             return {
                 ...newState,
                 players: newState.players.map(p =>
-                    p === ownSlot ? { ...p, status: 'online', lastSeen: Date.now() } : p
+                    p === ownSlot
+                        ? { ...p, sessionId, deviceId: deviceId || p.deviceId, status: 'online', lastSeen: Date.now() }
+                        : p
                 ),
             };
         }
@@ -55,7 +65,7 @@ export function gameReducer(state, action) {
             // инкогнито / после очистки localStorage клиент получает новый
             // sessionId, и без этого один человек числился в зрителях дважды.
             const others = newState.spectators.filter(s => s.name !== playerName);
-            return { ...newState, spectators: [...others, { name: playerName, id: sessionId }] };
+            return { ...newState, spectators: [...others, { name: playerName, id: sessionId, deviceId }] };
         }
 
         // 1. Попытка восстановить игрока по имени (Rejoin Logic / Smart Join)
@@ -78,7 +88,7 @@ export function gameReducer(state, action) {
             // Игрок с таким именем есть и он (offline/disconnected) ИЛИ это тот же sessionId. Восстанавливаем.
             const newPlayers = newState.players.map((p, i) =>
                 i === existingPlayerIndex
-                ? { ...p, sessionId: sessionId, status: 'online', lastSeen: Date.now() } // Обновляем SessionID и статус
+                ? { ...p, sessionId: sessionId, deviceId: deviceId || p.deviceId, status: 'online', lastSeen: Date.now() }
                 : p
             );
 
@@ -108,7 +118,7 @@ export function gameReducer(state, action) {
 
         const newPlayers = newState.players.map((p, i) =>
             i === joinIndex
-            ? { ...p, name: playerName, isClaimed: true, scores: restoredScore > 0 ? [restoredScore] : [], status: 'online', sessionId, hasEnteredGame: restoredScore > 0, lastSeen: Date.now() }
+            ? { ...p, name: playerName, isClaimed: true, scores: restoredScore > 0 ? [restoredScore] : [], status: 'online', sessionId, deviceId, hasEnteredGame: restoredScore > 0, lastSeen: Date.now() }
             : p
         );
         return {
@@ -409,7 +419,7 @@ export function gameReducer(state, action) {
         if ((newState.joinRequests || []).some(r => r.sessionId === sessionId)) return state; // уже просился
         return {
             ...newState,
-            joinRequests: [...(newState.joinRequests || []), { sessionId, name: spec.name, requestedAt: Date.now() }],
+            joinRequests: [...(newState.joinRequests || []), { sessionId, name: spec.name, deviceId: spec.deviceId, requestedAt: Date.now() }],
             gameMessage: `${spec.name} просится в игру.`
         };
     }
@@ -431,7 +441,7 @@ export function gameReducer(state, action) {
         if (restoredScore > 0) delete newLeavers[spec.name];
         const newPlayers = newState.players.map((p, i) =>
             i === joinIndex
-                ? { ...createInitialState().players[0], id: p.id, name: spec.name, isClaimed: true, status: 'online', sessionId, hasEnteredGame: restoredScore > 0, scores: restoredScore > 0 ? [restoredScore] : [], lastSeen: Date.now() }
+                ? { ...createInitialState().players[0], id: p.id, name: spec.name, isClaimed: true, status: 'online', sessionId, deviceId: spec.deviceId, hasEnteredGame: restoredScore > 0, scores: restoredScore > 0 ? [restoredScore] : [], lastSeen: Date.now() }
                 : p
         );
         return {

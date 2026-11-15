@@ -278,8 +278,16 @@ export class TysiachaRoom extends Server {
                 //    после реконнекта одобренный игрок откатывался в зрители;
                 //  - новый участник в начатой партии — зритель;
                 //  - в лобби — как прислал клиент.
+                // Возврат узнаётся по устройству, а не только по сессии:
+                // sessionId меняется при каждой вкладке, deviceId стабилен.
+                // Если на заявленном слоте стоит этот deviceId (или этот
+                // sessionId) — это вернувшийся игрок, а не новый зритель.
+                const bodyDev = typeof data.deviceId === 'string' ? data.deviceId : null;
                 const reconnectSlot = (this.game.players || []).some(
-                    (p) => p.isClaimed && p.sessionId === bodySid
+                    (p) => p.isClaimed && (
+                        p.sessionId === bodySid ||
+                        (bodyDev && p.deviceId === bodyDev)
+                    )
                 );
                 let asSpectator;
                 if (reconnectSlot) asSpectator = false;
@@ -300,6 +308,7 @@ export class TysiachaRoom extends Server {
                     payload: {
                         playerName: data.playerName || 'Игрок',
                         sessionId: bodySid,
+                        deviceId: typeof data.deviceId === 'string' ? data.deviceId : null,
                         asSpectator,
                     },
                 };

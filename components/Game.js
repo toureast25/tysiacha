@@ -29,6 +29,12 @@ const Game = ({ roomCode, playerName, initialMode, localConfig, asSpectator = fa
   // оставляя настоящий слот занятым офлайн-игроком. localStorage переживает
   // закрытие браузера, поэтому возврат = reconnect в свой же слот.
   const mySessionIdRef = React.useRef(localStorage.getItem('tysiacha-sessionId') || `sid_${Math.random().toString(36).substr(2, 9)}`);
+  // Личность устройства: стабильный id, генерится один раз и живёт вечно.
+  // sessionId — токен живого соединения (может меняться при каждой вкладке),
+  // deviceId — то, по чему сервер узнаёт вернувшегося игрока и возвращает
+  // его в свой слот вместо понижения в зрители.
+  const deviceIdRef = React.useRef(localStorage.getItem('tysiacha-deviceId') || `dev_${Math.random().toString(36).slice(2, 12)}${Date.now().toString(36)}`);
+  localStorage.setItem('tysiacha-deviceId', deviceIdRef.current);
   const wakeLockRef = React.useRef(null);
 
   // 4. Init Network Hook (PartyKit room). Сервер — единственный источник истины.
@@ -37,6 +43,7 @@ const Game = ({ roomCode, playerName, initialMode, localConfig, asSpectator = fa
       playerName,
       isLocalMode,
       mySessionId: mySessionIdRef.current,
+      deviceId: deviceIdRef.current,
       dispatch,
       asSpectator: asSpectator && !isLocalMode,
   });
