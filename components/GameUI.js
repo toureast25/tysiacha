@@ -108,7 +108,7 @@ const GameUI = (props) => {
     // Когда сервер присылает новый rollNonce (кто-то бросил кости), кубики
     // «крутятся» короткое время случайными гранями, затем оседают на реальных
     // значениях. Работает одинаково для игрока и зрителя — все видят бросок.
-    const ROLL_ANIM_MS = 700;
+    const ROLL_ANIM_MS = 880; // чуть больше длительности dice-spin (0.85s), чтобы снять rolling после доведения
     const [rolling, setRolling] = React.useState(false);
     const [spinStyles, setSpinStyles] = React.useState([]);
     const lastNonceRef = React.useRef(gameState.rollNonce);
@@ -130,7 +130,7 @@ const GameUI = (props) => {
                 '--sx': turns(2) + 'deg',   // 1–2 оборота вокруг X, ±
                 '--sy': turns(3) + 'deg',   // 1–3 оборота вокруг Y, ±
                 '--sz': turns(1) + 'deg',   // 0–1 оборот вокруг Z, ±
-                animationDuration: (0.55 + Math.random() * 0.45).toFixed(2) + 's',
+                animationDuration: (0.55 + Math.random() * 0.27).toFixed(2) + 's', // 0.55–0.82s, все до ROLL_ANIM_MS
             };
         });
         setSpinStyles(spins);
