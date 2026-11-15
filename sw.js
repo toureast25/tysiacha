@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tysiacha-cache-v1.20.0'; // Increment cache version
+const CACHE_NAME = 'tysiacha-cache-v1.21.0'; // Increment cache version
 const urlsToCache = [
   '.', // Кэшируем корневую директорию (эквивалент '/')
   'index.html',
@@ -62,17 +62,14 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Для всех остальных запросов (скрипты, стили) сначала ищем в кэше
+  // Для скриптов и стилей — network-first: всегда пробуем сеть, чтобы
+  // свежие правки были видны сразу после перезагрузки, а кэш служит
+  // офлайн-запаской. Раньше был cache-first, из-за чего браузер неделями
+  // отдавал старую версию, пока не сменишь CACHE_NAME.
   event.respondWith(
-    caches.match(event.request).then(cachedResponse => {
-      // Return cached response if found
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-
-      // Otherwise, fetch from network
-      return fetch(event.request).then(networkResponse => {
-        // If request is successful, clone and cache the response
+    fetch(event.request)
+      .then(networkResponse => {
+        // Успешный ответ кладём/обновляем в кэш (для офлайна).
         if (networkResponse && networkResponse.status === 200) {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then(cache => {
@@ -80,8 +77,13 @@ self.addEventListener('fetch', event => {
           });
         }
         return networkResponse;
-      });
-    })
+      })
+      .catch(() =>
+        // Сеть недоступна — отдаём из кэша, если есть.
+        caches.match(event.request).then(cachedResponse =>
+          cachedResponse || Response.error()
+        )
+      )
   );
 });
 
