@@ -3,6 +3,7 @@ import GameUI from './GameUI.js';
 import { createLocalGameState } from '../utils/gameLogic.js';
 import { useGameEngine } from './hooks/useGameEngine.js';
 import { useRoom } from './hooks/useRoom.js';
+import { getDeviceId } from '../utils/deviceId.js';
 
 const Game = ({ roomCode, playerName, initialMode, localConfig, asSpectator = false, onExit }) => {
   const isLocalMode = initialMode === 'local';
@@ -32,9 +33,10 @@ const Game = ({ roomCode, playerName, initialMode, localConfig, asSpectator = fa
   // Личность устройства: стабильный id, генерится один раз и живёт вечно.
   // sessionId — токен живого соединения (может меняться при каждой вкладке),
   // deviceId — то, по чему сервер узнаёт вернувшегося игрока и возвращает
-  // его в свой слот вместо понижения в зрители.
-  const deviceIdRef = React.useRef(localStorage.getItem('tysiacha-deviceId') || `dev_${Math.random().toString(36).slice(2, 12)}${Date.now().toString(36)}`);
-  localStorage.setItem('tysiacha-deviceId', deviceIdRef.current);
+  // его в свой слот вместо понижения в зрители. Держится в localStorage +
+  // cookie + sessionStorage сразу (см. utils/deviceId.js), чтобы пережить
+  // чистку любого одного хранилища.
+  const deviceIdRef = React.useRef(getDeviceId());
   const wakeLockRef = React.useRef(null);
 
   // 4. Init Network Hook (PartyKit room). Сервер — единственный источник истины.

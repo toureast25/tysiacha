@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tysiacha-cache-v1.11.0'; // Increment cache version
+const CACHE_NAME = 'tysiacha-cache-v1.12.0'; // Increment cache version
 const urlsToCache = [
   '.', // Кэшируем корневую директорию (эквивалент '/')
   'index.html',
@@ -10,6 +10,7 @@ const urlsToCache = [
   'utils/gameReducer.js',
   'utils/roomApi.js',
   'utils/config.js',
+  'utils/deviceId.js',
   'components/App.js',
   'components/Lobby.js',
   'components/Game.js',
