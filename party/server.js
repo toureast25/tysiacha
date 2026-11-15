@@ -46,6 +46,9 @@ const OFFLINE_AFTER_MS = 45000;   // нет PING дольше — игрок с�
 const SEEN_CAP = 5000;            // потолок карты дедупликации интентов
 const MAX_SPECTATORS = 20;        // потолок зрителей: без него флуд соединений раздувает снапшот
 const MAX_JOIN_REQUESTS = 10;     // потолок заявок на вход
+// Комната без подключений и без активности дольше этого срока считается мёртвой
+// и при холодном пробуждении сбрасывается в чистое состояние.
+const ROOM_TTL_MS = 6 * 60 * 60 * 1000; // 6 часов
 
 // Действия, которые может слать только хост (hostId в состоянии).
 const ADMIN_ACTIONS = new Set([
@@ -125,6 +128,8 @@ export class TysiachaRoom extends Server {
     // --- персистентность: fire-and-forget, не блокируем рассылку ---
     persist() {
         if (!this.game) return;
+        // Штамп последней активности — для авто-очистки мёртвых комнат.
+        this.game.lastActivityTs = Date.now();
         Promise.resolve(this.ctx.storage.put(STORAGE_KEY, this.game)).catch((e) => {
             console.error('[room] storage.put failed', e);
         });
@@ -225,8 +230,18 @@ export class TysiachaRoom extends Server {
         return changed;
     }
 
-    // --- планируем следующий sweeping-аларм ---
+    // Есть ли живые WebSocket-подключения прямо сейчас. Пока их нет — комната
+    // никого не обслуживает и будить себя каждые 10 с не обязана (это жрёт
+    // дневную квоту Durable Objects).
+    hasLiveConnections() {
+        return this.connSession.size > 0;
+    }
+
+    // --- планируем следующий sweeping-аларм (только пока есть кому отвечать) ---
     schedulePresenceTick() {
+        // Без живых подключений аларм не ставим: DO выгрузится, запросы перестанут
+        // течь. При следующем заходе onStart/onConnect перезапланирует тик.
+        if (!this.hasLiveConnections()) return;
         try {
             this.ctx.storage.setAlarm(Date.now() + PRESENCE_TICK_MS);
         } catch (e) {
@@ -237,19 +252,38 @@ export class TysiachaRoom extends Server {
     // --- DO стартовал (первый запрос или аларм) ---
     async onStart() {
         await this.ensureLoaded();
+        await this.maybeExpireDeadRoom();
         this.schedulePresenceTick();
     }
 
-    // --- срабатывание аларма: sweeping presence + перепланировать ---
+    // --- срабатывание аларма: sweeping presence + перепланировать (если живы) ---
     async onAlarm() {
         await this.ensureLoaded();
         this.sweepPresence();
+        // Перепланируем только при живых подключениях; иначе комната засыпает.
         this.schedulePresenceTick();
+    }
+
+    // --- ленивая авто-очистка мёртвых комнат при холодном пробуждении ---
+    // Комната без подключений, в которую не заходили дольше ROOM_TTL_MS, считается
+    // мёртвой: сбрасываем её состояние в чистое, чтобы не копить мусор в storage.
+    // Дешёвая проверка по lastActivityTs; срабатывает только на onStart (холодный
+    // старт), поэтому не тратит квоту на пустых комнат.
+    async maybeExpireDeadRoom() {
+        if (this.hasLiveConnections()) return;
+        if (!this.game) return;
+        const last = this.game.lastActivityTs || this.game.createdAt || 0;
+        if (last && Date.now() - last > ROOM_TTL_MS) {
+            this.game = createInitialState();
+            this.persist();
+        }
     }
 
     // --- новое WebSocket-соединение ---
     async onConnect(connection) {
         await this.ensureLoaded();
+        // Заход игрока — активность: оживляет комнату, близкую к авто-очистке.
+        if (this.game) this.game.lastActivityTs = Date.now();
         this.schedulePresenceTick();
         // Снапшот новому подключению — сразу, чтобы успел отрисоваться.
         if (this.game) {
